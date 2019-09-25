@@ -8,6 +8,7 @@ import os
 import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 class Word2vecModel(object):
+
     def __init__(self, vocab_size, embed_size, num_sampled, learn_rating, log_dir):
         self.vocab_size = vocab_size
         self.embed_size = embed_size
@@ -20,6 +21,7 @@ class Word2vecModel(object):
         with tf.name_scope("data"):
             self.context_words = tf.placeholder(tf.int32, shape=[None], name="context_words")
             self.target_words = tf.placeholder(tf.int32, shape=[None, 1], name="target_words")
+            self.batches_loss = tf.placeholder(tf.float32, shape=[None], name="batches_loss")
 
     def _create_embeddding(self):
         with tf.name_scope("embed"):
@@ -41,24 +43,27 @@ class Word2vecModel(object):
                                                       num_sampled=self.num_sampled,
                                                       num_classes=self.vocab_size), name='loss')
 
-    def _carete_optimizer(self):
-        self.optimizer = tf.train.GradientDescentOptimizer(self.lr).minimize(self.loss,
-                                                                             global_step=self.global_step)
+    def _create_optimizer(self):
+        with tf.name_scope("optimizer"):
+            self.optimizer = tf.train.GradientDescentOptimizer(self.lr).minimize(self.loss,
+                                                                                 global_step=self.global_step)
+
+    def _create_average_loss(self):
+        with tf.name_scope("average_loss"):
+            self.average_loss = tf.reduce_mean(self.batches_loss, name="loss_mean")
 
     def _create_summaries(self):
         with tf.name_scope("summaries"):
-            tf.summary.scalar("loss", self.loss)
-            tf.summary.histogram("histogram loss", self.loss)
+            tf.summary.scalar("loss", self.average_loss)
+            tf.summary.histogram("histogram loss", self.average_loss)
             self.merge = tf.summary.merge_all()
             self.train_writer = tf.summary.FileWriter(logdir=self.log_dir)
-
-    def set_learn_rate(self, learn_rate):
-        self.lr = learn_rate
 
     def build_graph(self):
         self._create_placeholders()
         self._create_embeddding()
         self._create_loss()
-        self._carete_optimizer()
+        self._create_optimizer()
+        self._create_average_loss()
         self._create_summaries()
 
