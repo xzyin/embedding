@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import codecs
-from collections import Counter
 import numpy as np
+from collections import Counter
 
 """
 统计序列中词汇的词频个数
@@ -56,7 +56,7 @@ class Word2vecTokenizer(object):
         yield (center_batch[0:index], target_batch[0:index,])
 
 if __name__=="__main__":
-    (vocab_dict, view_seqs) = (Word2vecTokenizer.build_vocab("C:\\Users\\xuezhengyin210834\\Desktop\\text_seqs", 10, False))
+    (vocab_dict, view_seqs) = Word2vecTokenizer.build_vocab("C:\\Users\\xuezhengyin210834\\Desktop\\text_seqs", 10, False)
     for (center, target) in Word2vecTokenizer.generate_batch(10, 300, view_seqs):
         print(center)
         print(target)
