@@ -23,19 +23,28 @@ class Word2vecTokenizer(object):
         counter = Counter()
         vocab_dict = dict()
         view_seqs = []
+        index = 0
         #生成词汇表字典
         with codecs.open(path, 'r', 'utf-8') as f:
             for line in f:
                 counter.update(line.strip().split(" "))
+                index += 1
+                if index % 100000 == 0:
+                    logging.info("build vocabulary, load index:{}".format(index))
+
         for (key, value) in counter.items():
             if value >= min_count:
                 vocab_dict[key] = len(vocab_dict) + 1
         f.close()
         #处理用户观影序列成index 序列
+        index = 0
         with codecs.open(path, 'r', 'utf-8') as f1:
             for line in f1:
                 items = [vocab_dict.get(i) for i in line.strip().split(" ") if i in vocab_dict.keys()]
                 view_seqs.append(items)
+                index += 1
+                if index % 1000000 == 0:
+                    logging.info("filter minimum vocabulary, load index:{}".format(index))
         return vocab_dict, view_seqs
 
     """
