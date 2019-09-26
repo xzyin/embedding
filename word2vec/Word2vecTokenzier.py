@@ -4,7 +4,13 @@
 import codecs
 import numpy as np
 from collections import Counter
-
+import logging
+logging.getLogger().setLevel(logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 """
 统计序列中词汇的词频个数
 如果词频个数小于最小词频对该词汇进行过滤

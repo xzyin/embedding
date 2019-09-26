@@ -77,10 +77,11 @@ def dump(sess, model, vocab_dict):
 
 def main():
     vocab_dict, view_seqs = wt.build_vocab(args["input"], args["min_count"], False)
+    logging.info("build vocabulary successful, vocabulary size: {}".format(len(vocab_dict)))
     train(vocab_dict, view_seqs)
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(prog="Word2vec")
     ap.add_argument("--input", help="input path of the word sequences ")
     ap.add_argument("--iter", type=int, default=20, help="max iteration of the word2vec")
     ap.add_argument("--window_size", type=int, default=5, help="window size of the word2vec model")
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     ap.add_argument("--lr", type=float, default=1.0, help="learn rate of the word2vec model")
     ap.add_argument("--size", type=int, default=128, help="dimensions size of the word embedding space")
     ap.add_argument("--min_count", type=int, default=10, help="minimum word frequency")
-    ap.add_argument("--log_dir", default=None, help="directory of tensor board log")
+    ap.add_argument("--log_dir", help="directory of tensor board log")
     ap.add_argument("--num_sampled", type=int, default=64, help="num sampled of the word2vec model")
     ap.add_argument("--output", help="output path of the vector")
     args = vars(ap.parse_args())
