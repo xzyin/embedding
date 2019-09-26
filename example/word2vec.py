@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import sys
 import logging
+import argparse
 import numpy as np
 import tensorflow as tf
 from os.path import abspath, dirname
@@ -15,12 +16,20 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def train(epoch, window_size, batch_size, learn_rate):
-    vocab_dict, view_seqs = wt.build_vocab("C:\\Users\\xuezhengyin210834\\Desktop\\text_seqs", 10, False)
-    word2vec_model = Word2vecModel(len(vocab_dict) + 1, 10, 10, 1.0, "C:\\Users\\xuezhengyin210834\\Desktop\\test_log_dir")
-    ratio = learn_rate / epoch
+'''
+训练word2vec模型
+'''
+def train(vocab_dict, view_seqs):
+    epoch = args["iter"]
+    window_size = args["window_size"]
+    batch_size = args["batch_size"]
+    learn_rate = args["lr"]
+    log_dir = args["log_dir"]
+    embed_size = args["size"]
+    num_sampled = args["num_sampled"]
+    word2vec_model = Word2vecModel(vocab_size=len(vocab_dict)+1, embed_size=embed_size,
+                                   num_sampled=num_sampled, learn_rate=learn_rate, log_dir=log_dir)
     word2vec_model.build_graph()
-    #saver = tf.train.Saver()
     with tf.Session(config=tf.ConfigProto(
             allow_soft_placement=True,
             log_device_placement=True,
@@ -48,10 +57,39 @@ def train(epoch, window_size, batch_size, learn_rate):
             word2vec_model.train_writer.add_summary(merge, i)
             logging.info("Average loss at epoch {}, pair count {}, current loss {:5.5f}, learn rate {:3.3f}"
                          .format(i, batch_count, average_loss, learn_rate))
-
+        dump(sess, word2vec_model, vocab_dict=vocab_dict)
         word2vec_model.train_writer.close()
+    return sess, word2vec_model
+
+def dump(sess, model, vocab_dict):
+    output = open(args["output"], "w")
+    sess.run(tf.global_variables_initializer())
+    index_dict = dict(zip(vocab_dict.values(), vocab_dict.keys()))
+    word_vector = sess.run(model.embed_matrix)
+    for i, vec in enumerate(word_vector):
+        if i in index_dict.keys():
+            vid = index_dict.get(i)
+            vector = " ".join([str(dim) for dim in vec])
+            line = "{} {}\n".format(vid, vector)
+            output.write(line)
+    output.close()
 
 
+def main():
+    vocab_dict, view_seqs = wt.build_vocab(args["input"], args["min_count"], False)
+    train(vocab_dict, view_seqs)
 
 if __name__ == "__main__":
-    train(10, 10, 300, 1.0)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", help="input path of the word sequences ")
+    ap.add_argument("--iter", type=int, default=20, help="max iteration of the word2vec")
+    ap.add_argument("--window_size", type=int, default=5, help="window size of the word2vec model")
+    ap.add_argument("--batch_size", type=int, default=300, help="batch size of train model data")
+    ap.add_argument("--lr", type=float, default=1.0, help="learn rate of the word2vec model")
+    ap.add_argument("--size", type=int, default=128, help="dimensions size of the word embedding space")
+    ap.add_argument("--min_count", type=int, default=10, help="minimum word frequency")
+    ap.add_argument("--log_dir", default=None, help="directory of tensor board log")
+    ap.add_argument("--num_sampled", type=int, default=64, help="num sampled of the word2vec model")
+    ap.add_argument("--output", help="output path of the vector")
+    args = vars(ap.parse_args())
+    main()

@@ -9,12 +9,12 @@ import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 class Word2vecModel(object):
 
-    def __init__(self, vocab_size, embed_size, num_sampled, learn_rating, log_dir):
+    def __init__(self, vocab_size, embed_size, num_sampled, learn_rate, log_dir):
         self.vocab_size = vocab_size
         self.embed_size = embed_size
         self.num_sampled = num_sampled
         self.global_step = tf.Variable(0, dtype=tf.int32, trainable=False, name="global_step")
-        self.lr = learn_rating
+        self.lr = learn_rate
         self.log_dir = log_dir
 
     def _create_placeholders(self):
