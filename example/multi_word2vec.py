@@ -10,9 +10,8 @@ from multiprocessing import Process
 from multiprocessing import Queue
 from os.path import abspath, dirname
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
-from word2vec.Word2vecTokenzier import MultiThreadingWord2vecTokenizer
-from word2vec.Word2vecTokenzier import MultiThreadingWord2vecTokenizer as mtwv
 from word2vec.Word2vecModel import Word2vecModel
+from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +35,7 @@ def process_start(num_thread, window_size, batch_size, view_sequences, queue):
         end_offset = (i + 1) * view_length
         if i == num_thread:
             end_offset = all_view_length
-        process = Process(target=mtwv.generate_batch_queue, args=(window_size, batch_size, view_sequences[start_offset:end_offset], queue))
+        process = Process(target=wt.generate_batch_queue, args=(window_size, batch_size, view_sequences[start_offset:end_offset], queue))
         processes.append(process)
         process.start()
     return processes
@@ -109,7 +108,6 @@ def dump(sess, model, vocab_dict):
 
 
 def main():
-    wt = MultiThreadingWord2vecTokenizer()
     vocab_dict, view_seqs = wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], False)
     train(vocab_dict, view_seqs)
 
