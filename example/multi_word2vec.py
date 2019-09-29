@@ -83,6 +83,7 @@ def train(vocab_dict, view_seqs):
                         logging.info("epoch: {}, batch count: {}, pair count: {}, loss: {:5.5f}"
                                      .format(i, k, batch_count, loss_batch))
                 else:
+                    time.sleep(2)
                     logging.info("epoch: {}, queue of the prepare data processing is empty".format(i))
             feed_dict = {word2vec_model.batches_loss: np.array(batches_loss)}
             average_loss, merge = sess.run([word2vec_model.average_loss, word2vec_model.merge], feed_dict=feed_dict)
