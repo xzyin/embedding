@@ -59,7 +59,7 @@ class Word2vecTokenizer(object):
             if len(items) >= 2:
                 sequences.append(items)
             if index % 100000 == 0:
-                logging.info("transfer sequeneces:{}, in pid:{}".format(index, os.getpgid()))
+                logging.info("transfer sequeneces:{}, in pid:{}".format(index, os.getpid()))
         return sequences
 
     @staticmethod
