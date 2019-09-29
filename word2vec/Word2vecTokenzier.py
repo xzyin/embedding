@@ -70,6 +70,26 @@ class Word2vecTokenizer(object):
                         index = 0
         yield (center_batch[0:index], target_batch[0:index,])
 
+    @staticmethod
+    def generate_batch_queue(window_size, batch_size, view_sequence, queue):
+        center_batch = np.zeros(batch_size, dtype=np.int32)
+        target_batch = np.zeros([batch_size, 1])
+        index = 0
+        for items in view_sequence:
+            for (i, center) in enumerate(items):
+                size = np.random.randint(1, window_size)
+                targets = [] + items[max(i - size, 0): i] + items[i + 1: min(i + size, len(items))]
+                for target in targets:
+                    if index < batch_size:
+                        center_batch[index], target_batch[index] = center, target
+                        index += 1
+                    else:
+                        queue.put((center_batch, target_batch))
+                        center_batch = np.zeros(batch_size, dtype=np.long)
+                        target_batch = np.zeros([batch_size, 1])
+                        index = 0
+        queue.put((center_batch[0:index], target_batch[0:index, ]))
+
 if __name__=="__main__":
     (vocab_dict, view_seqs) = Word2vecTokenizer.build_vocab("C:\\Users\\xuezhengyin210834\\Desktop\\text_seqs", 10, False)
     for (center, target) in Word2vecTokenizer.generate_batch(10, 300, view_seqs):

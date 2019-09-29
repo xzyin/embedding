@@ -1,6 +1,5 @@
 # Word2vec Model
-* Skip Gram
+* Multithreading SkipGram
 * CBOW
 * Item2vec
-* Skip Gram On TensorflowOnSpark
 * Item2vec On TensorflowOnSpark
