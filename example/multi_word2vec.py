@@ -10,7 +10,8 @@ from multiprocessing import Process
 from multiprocessing import Queue
 from os.path import abspath, dirname
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
-from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
+from word2vec.Word2vecTokenzier import MultiThreadingWord2vecTokenizer
+from word2vec.Word2vecTokenzier import MultiThreadingWord2vecTokenizer as mtwv
 from word2vec.Word2vecModel import Word2vecModel
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(
@@ -35,7 +36,7 @@ def process_start(num_thread, window_size, batch_size, view_sequences, queue):
         end_offset = (i + 1) * view_length
         if i == num_thread:
             end_offset = all_view_length
-        process = Process(target=wt.generate_batch_queue, args=(window_size, batch_size, view_sequences[start_offset:end_offset], queue))
+        process = Process(target=mtwv.generate_batch_queue, args=(window_size, batch_size, view_sequences[start_offset:end_offset], queue))
         processes.append(process)
         process.start()
     return processes
@@ -82,7 +83,6 @@ def train(vocab_dict, view_seqs):
                         logging.info("epoch: {}, batch count: {}, pair count: {}, loss: {:5.5f}"
                                      .format(i, k, batch_count, loss_batch))
                 else:
-                    time.sleep(2)
                     logging.info("epoch: {}, queue of the prepare data processing is empty".format(i))
             feed_dict = {word2vec_model.batches_loss: np.array(batches_loss)}
             average_loss, merge = sess.run([word2vec_model.average_loss, word2vec_model.merge], feed_dict=feed_dict)
@@ -108,8 +108,8 @@ def dump(sess, model, vocab_dict):
 
 
 def main():
-    vocab_dict, view_seqs = wt.build_vocab(args["input"], args["min_count"], False)
-    logging.info("build vocabulary successful, vocabulary size: {}".format(len(vocab_dict)))
+    wt = MultiThreadingWord2vecTokenizer()
+    vocab_dict, view_seqs = wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], False)
     train(vocab_dict, view_seqs)
 
 if __name__ == "__main__":

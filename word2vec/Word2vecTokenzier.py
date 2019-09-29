@@ -3,6 +3,7 @@
 
 import codecs
 import numpy as np
+from multiprocessing import Pool
 from collections import Counter
 import logging
 logging.getLogger().setLevel(logging.INFO)
@@ -11,6 +12,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
 """
 统计序列中词汇的词频个数
 如果词频个数小于最小词频对该词汇进行过滤
@@ -69,6 +71,52 @@ class Word2vecTokenizer(object):
                         target_batch = np.zeros([batch_size, 1])
                         index = 0
         yield (center_batch[0:index], target_batch[0:index,])
+
+class MultiThreadingWord2vecTokenizer(object):
+
+    def __init__(self):
+        self.vocab_dict = dict()
+
+    def transfer(self, block):
+        sequences = []
+        for line in block:
+            items = [self.vocab_dict.get(i) for i in line.strip().split(" ") if i in self.vocab_dict.keys()]
+            if len(items) >= 2:
+                sequences.append(items)
+        return sequences
+
+    def block_vocab_counter(self, block):
+        counter = Counter()
+        for line in block:
+            counter.update(line.strip().split(" "))
+        return counter
+
+    def build_vocab_threading(self, path, thread, min_count, with_rating=True):
+        sequences = []
+        counter = Counter()
+        with codecs.open(path, 'r', 'utf-8') as f:
+            lines = f.readlines()
+            f.close()
+        all_len = len(lines)
+        block_len = int(all_len / thread)
+        blocks = []
+        for i in range(thread):
+            start_offset = block_len * i
+            end_offset = block_len * (i + 1)
+            if i + 1 == thread:
+                end_offset = all_len
+            blocks.append(lines[start_offset:end_offset])
+        with Pool(thread) as pool:
+            for block_counter in pool.imap_unordered(self.block_vocab_counter, blocks):
+                counter.update(block_counter)
+            for (key, value) in counter.items():
+                if value >= min_count:
+                    self.vocab_dict[key] = len(self.vocab_dict) + 1
+        logging.info("build vocabulary success, vocabulary size:{}".format(len(self.vocab_dict)))
+        with Pool(thread) as pool:
+            for block_sequences in pool.imap_unordered(self.transfer, blocks):
+                sequences.extend(block_sequences)
+        return self.vocab_dict, sequences
 
     @staticmethod
     def generate_batch_queue(window_size, batch_size, view_sequence, queue):
