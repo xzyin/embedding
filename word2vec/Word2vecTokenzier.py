@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+import os
 import codecs
 import numpy as np
 from multiprocessing import Pool
@@ -47,7 +47,7 @@ class Word2vecTokenizer(object):
                 view_seqs.append(items)
                 index += 1
                 if index % 1000000 == 0:
-                    logging.info("filter minimum vocabulary, load index:{}".format(index, multiprocessing.Process.pid))
+                    logging.info("filter minimum vocabulary, load index:{}".format(index))
         return vocab_dict, view_seqs
 
     @staticmethod
@@ -59,7 +59,7 @@ class Word2vecTokenizer(object):
             if len(items) >= 2:
                 sequences.append(items)
             if index % 100000 == 0:
-                logging.info("transfer sequeneces:{}, in pid:{}".format(index, multiprocessing.Process.name))
+                logging.info("transfer sequeneces:{}, in pid:{}".format(index, os.getpgid()))
         return sequences
 
     @staticmethod
