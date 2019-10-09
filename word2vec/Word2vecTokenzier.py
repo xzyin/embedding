@@ -27,7 +27,7 @@ class Word2vecTokenizer(object):
         vocab_dict = dict()
         view_seqs = []
         index = 0
-        #生成词汇表字典
+        # 生成词汇表字典
         with codecs.open(path, 'r', 'utf-8') as f:
             for line in f:
                 counter.update(line.strip().split(" "))
@@ -39,11 +39,11 @@ class Word2vecTokenizer(object):
             if value >= min_count:
                 vocab_dict[key] = len(vocab_dict) + 1
         f.close()
-        #处理用户观影序列成index 序列
+        # 处理用户观影序列成index 序列
         index = 0
         with codecs.open(path, 'r', 'utf-8') as f1:
             for line in f1:
-                items = [vocab_dict.get(i) for i in line.strip().split(" ") if i in vocab_dict.keys()]
+                items = [str(vocab_dict.get(i)) for i in line.strip().split(" ") if i in vocab_dict.keys()]
                 view_seqs.append(items)
                 index += 1
                 if index % 1000000 == 0:
@@ -52,12 +52,11 @@ class Word2vecTokenizer(object):
 
     @staticmethod
     def transfer(block, vocab_dict):
-        print("this is a good idea")
         sequences = []
         for index, line in enumerate(block):
-            items = [vocab_dict.get(i) for i in line.strip().split(" ") if i in vocab_dict.keys()]
+            items = [str(vocab_dict.get(i)) for i in line.strip().split(" ") if i in vocab_dict.keys()]
             if len(items) >= 2:
-                sequences.append(items)
+                sequences.append(' '.join(items))
             if index % 100000 == 0:
                 logging.info("transfer sequeneces:{}, in pid:{}".format(index, os.getpid()))
         return sequences
@@ -74,9 +73,7 @@ class Word2vecTokenizer(object):
         sequences = []
         vocab_dict = dict()
         counter = Counter()
-        with codecs.open(path, 'r', 'utf-8') as f:
-            lines = f.readlines()
-            f.close()
+        lines = codecs.open(path, 'r', 'utf-8').readlines()
         all_len = len(lines)
         block_len = int(all_len / thread)
         blocks = []
@@ -93,6 +90,8 @@ class Word2vecTokenizer(object):
                 if value >= min_count:
                     vocab_dict[key] = len(vocab_dict) + 1
         logging.info("build vocabulary success, vocabulary size:{}".format(len(vocab_dict)))
+        pool.join()
+        pool.close()
         with Pool(thread) as pool:
             results = [pool.apply_async(Word2vecTokenizer.transfer, (block, vocab_dict)) for block in blocks]
             pool.close()
