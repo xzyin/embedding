@@ -157,7 +157,7 @@ class Word2vecModelPipeline(object):
         with tf.Session(config=tf.ConfigProto(
                 allow_soft_placement=True,
                 log_device_placement=True,
-                gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.5))) as sess:
+                gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8))) as sess:
             sess.run(tf.global_variables_initializer())
             total_loss = 0.0
             batch_cnt = 0
