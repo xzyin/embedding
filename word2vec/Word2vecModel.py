@@ -133,6 +133,16 @@ class Word2vecModelPipeline(object):
             self.optimizer = tf.train.GradientDescentOptimizer(self.lr).minimize(self.loss,
                                                                                  global_step=self.global_step)
 
+    def _create_loss_placeholder(self):
+        with tf.name_scope("average_batch_loss"):
+            self.average_batch_loss = tf.placeholder(tf.float64)
+
+    def _create_summaries(self):
+        with tf.name_scope("summaries"):
+            tf.summary.scalar("loss", self.average_batch_loss)
+            self.merge = tf.summary.merge_all()
+            self.train_writer = tf.summary.FileWriter(logdir=self.log_dir)
+
     def build_graph(self):
         self._create_prepare_data()
         self._create_embeddding()
@@ -140,6 +150,8 @@ class Word2vecModelPipeline(object):
         self._create_embeddding()
         self._create_loss()
         self._create_optimizer()
+        self._create_loss_placeholder()
+        self._create_summaries()
 
     def train(self, epoch, lsize):
         with tf.Session(config=tf.ConfigProto(
@@ -157,8 +169,13 @@ class Word2vecModelPipeline(object):
                         batch_cnt += 1
                         total_loss += loss
                         if batch_cnt % lsize == 0:
-                            print("epoch {}, batches loss {:5.5f}".format(i, loss))
+                            logging.info("Epoch {}, Batches Loss {:5.5f}".format(i, loss))
                     except tf.errors.OutOfRangeError:
-                        print("epoch {}, total loss {:5.5f}".format(i, total_loss))
+                        batch_average = total_loss / batch_cnt
+                        logging.info("Epoch {}, Average Batch Loss {:5.5f}".format(i, batch_average))
+                        merge = sess.run(self.merge, feed_dict={self.average_batch_loss: batch_average})
+                        self.train_writer.add_summary(merge, i)
                         total_loss = 0.0
                         break
+            embedding_matrix = sess.run(self.embed_matrix)
+        return embedding_matrix
