@@ -170,10 +170,10 @@ class Word2vecModelPipeline(object):
                         batch_cnt += 1
                         total_loss += loss
                         if batch_cnt % lsize == 0:
-                            logging.info("Epoch {}, Batches Loss {:5.5f}".format(i, loss))
+                            logging.info("Epoch {}, batch count:{} loss {:5.5f}".format(i, batch_cnt, loss))
                     except tf.errors.OutOfRangeError:
                         batch_average = total_loss / batch_cnt
-                        logging.info("Epoch {}, Average Batch Loss {:5.5f}".format(i, batch_average))
+                        logging.info("Epoch {}, Average batch loss {:5.5f}".format(i, batch_average))
                         merge = sess.run(self.merge, feed_dict={self.average_batch_loss: batch_average})
                         self.train_writer.add_summary(merge, i)
                         total_loss = 0.0
