@@ -100,9 +100,10 @@ class Word2vecModelPipeline(object):
 
     def _create_prepare_data(self):
         self.data_view = tf.data.TextLineDataset(self.view_seqs).batch(self.batch_size)
-        self.pairs_tensor = self.data_view.map(lambda x: tf.py_func(self._pair, [x], tf.int32))
+        self.pairs_tensor = self.data_view.map(lambda x: tf.py_func(self._pair, [x], tf.int32), num_parallel_calls=20)
         self.pairs_batches = self.pairs_tensor.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))\
             .batch(self.batch_size)
+        self.pairs_batches_prefetch = self.pairs_batches.prefetch(100)
         self.batches_iterator = self.pairs_batches.make_initializable_iterator()
         self.batch_pair = self.batches_iterator.get_next()
         self.context = self.batch_pair[:,0]
