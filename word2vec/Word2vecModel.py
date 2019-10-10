@@ -166,7 +166,7 @@ class Word2vecModelPipeline(object):
                 sess.run(self.batches_iterator.initializer)
                 while True:
                     try:
-                        _ = sess.run(self.embed_context)
+                        _ = sess.run(self.batch_pair)
                         loss = 0.0
                         batch_cnt += 1
                         total_loss += loss
