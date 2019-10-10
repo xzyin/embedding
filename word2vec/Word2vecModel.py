@@ -99,7 +99,7 @@ class Word2vecModelPipeline(object):
         return np.reshape(pairs, newshape=(-1, 2))
 
     def _create_prepare_data(self):
-        self.data_view = tf.data.TextLineDataset.from_tensor_slices(self.view_seqs)
+        self.data_view = tf.data.TextLineDataset(self.view_seqs).batch(self.batch_size)
         self.pairs_tensor = self.data_view.map(lambda x: tf.py_func(self._pair, [x], tf.int32))
         self.pairs_batches = self.pairs_tensor.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))\
             .batch(self.batch_size)
