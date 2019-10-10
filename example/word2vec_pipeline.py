@@ -3,6 +3,7 @@
 
 import sys
 import argparse
+import numpy as np
 from os.path import abspath, dirname
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
 from word2vec.Word2vecModel import Word2vecModelPipeline
@@ -11,10 +12,17 @@ from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
 def main():
     vocab_dict, view_seqs =wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], False)
     model = Word2vecModelPipeline(view_seqs, args["window_size"], args["batch_size"], vocab_size=len(vocab_dict) + 1,
-                                  embed_size=args["embed_size"], num_sampled=args["num_sampled"],
+                                  embed_size=args["size"], num_sampled=args["num_sampled"],
                                   learn_rate=args["lr"], log_dir=args["log_dir"])
     model.build_graph()
-    model.train(args["iter"], args["lsize"])
+    embedding_matrix = model.train(args["iter"], args["lsize"])
+    index_dict = dict(zip(vocab_dict.values(), vocab_dict.keys()))
+    output = open(args["output"], "w")
+    for (i, vector) in enumerate(embedding_matrix):
+        if i in index_dict.keys():
+            dims = [str(dim) for dim in vector]
+            res = "{}\t{}\n".format(index_dict.get(i), " ".join(dims))
+            output.write(res)
 
 if __name__=='__main__':
     ap = argparse.ArgumentParser(prog="Word2vec")
