@@ -3,7 +3,6 @@
 
 import sys
 import argparse
-import numpy as np
 from os.path import abspath, dirname
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
 from word2vec.Word2vecModel import Word2vecModelPipeline
