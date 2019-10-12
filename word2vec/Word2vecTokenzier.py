@@ -56,7 +56,7 @@ class Word2vecTokenizer(object):
         for index, line in enumerate(block):
             items = [str(vocab_dict.get(i)) for i in line.strip().split(" ") if i in vocab_dict.keys()]
             if len(items) >= 2:
-                sequences.append(' '.join(items))
+                sequences.append(" ".join(items))
             if index % 100000 == 0:
                 logging.info("transfer sequeneces:{}, in pid:{}".format(index, os.getpid()))
         return sequences

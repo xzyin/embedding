@@ -100,10 +100,10 @@ class Word2vecModelPipeline(object):
 
     def _create_prepare_data(self):
         self.data_view = tf.data.TextLineDataset.from_tensor_slices(self.view_seqs)
-        self.pairs_tensor = self.data_view.map(lambda x: tf.py_func(self._pair, [x], tf.int32), num_parallel_calls=20)
+        self.pairs_tensor = self.data_view.map(lambda x: tf.py_func(self._pair, [x], tf.int32), num_parallel_calls=5)
         self.pairs_batches = self.pairs_tensor.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))\
             .batch(self.batch_size).prefetch(1000)
-        self.batches_iterator = self.pairs_batches.make_initializable_iterator()
+        self.batches_iterator = self.pairs_tensor.make_initializable_iterator()
         self.batch_pair = self.batches_iterator.get_next()
         self.context = self.batch_pair[:,0]
         self.target = tf.reshape(self.batch_pair[:,1], [-1, 1])
@@ -165,8 +165,7 @@ class Word2vecModelPipeline(object):
                 sess.run(self.batches_iterator.initializer)
                 while True:
                     try:
-                        _ = sess.run(self.batch_pair)
-                        loss = 0.0
+                        loss, _ = sess.run([self.loss, self.optimizer])
                         batch_cnt += 1
                         total_loss += loss
                         if batch_cnt % lsize == 0:
