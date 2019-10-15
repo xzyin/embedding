@@ -168,11 +168,11 @@ class Word2vecModelPipeline(object):
                 sess.run(self.batches_iterator.initializer)
                 while True:
                     try:
-                        if batch_cnt == 1:
+                        if batch_cnt <= 3:
                             loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
                             fetched_timeline = timeline.Timeline(run_metadata.step_stats)
                             chrome_trace = fetched_timeline.generate_chrome_trace_format()
-                            with open("./timeline_01.json", "w") as f:
+                            with open("./timeline_01_{}.json".format(batch_cnt), "w") as f:
                                 f.write(chrome_trace)
                         else:
                             loss, _ = sess.run([self.loss, self.optimizer])
