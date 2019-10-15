@@ -154,7 +154,7 @@ class Word2vecModelPipeline(object):
         self._create_loss_placeholder()
         self._create_summaries()
 
-    def train(self, epoch, lsize):
+    def train(self, epoch, lsize, timeline_path=None):
         with tf.Session(config=tf.ConfigProto(
                 allow_soft_placement=True,
                 log_device_placement=True,
@@ -168,11 +168,11 @@ class Word2vecModelPipeline(object):
                 sess.run(self.batches_iterator.initializer)
                 while True:
                     try:
-                        if i == 0 and batch_cnt <= 3010 and batch_cnt >= 3000:
+                        if i == 0 and batch_cnt <= 3010 and batch_cnt >= 3000 and timeline is not None:
                             loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
                             fetched_timeline = timeline.Timeline(run_metadata.step_stats)
                             chrome_trace = fetched_timeline.generate_chrome_trace_format()
-                            with open("./timeline_01_{}.json".format(batch_cnt), "w") as f:
+                            with open(timeline_path + "_{}.json".format(batch_cnt), "w") as f:
                                 f.write(chrome_trace)
                                 f.flush()
                                 f.close()

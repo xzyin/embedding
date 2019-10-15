@@ -14,7 +14,7 @@ def main():
                                   embed_size=args["size"], num_sampled=args["num_sampled"],
                                   learn_rate=args["lr"], log_dir=args["log_dir"])
     model.build_graph()
-    embedding_matrix = model.train(args["iter"], args["lsize"])
+    embedding_matrix = model.train(args["iter"], args["lsize"], args["timeline"])
     index_dict = dict(zip(vocab_dict.values(), vocab_dict.keys()))
     output = open(args["output"], "w")
     for (i, vector) in enumerate(embedding_matrix):
@@ -37,6 +37,7 @@ if __name__=='__main__':
     ap.add_argument("--output", help="output path of the vector")
     ap.add_argument("--thread", type=int, default=20, help="thread number of the preprocessing")
     ap.add_argument("--lsize", type=int, default=1000, help="logging of the batch size")
+    ap.add_argument("--timeline", default=None, help="Tensor flow time line json path")
     args = vars(ap.parse_args())
     main()
 
