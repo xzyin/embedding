@@ -168,7 +168,7 @@ class Word2vecModelPipeline(object):
                 sess.run(self.batches_iterator.initializer)
                 while True:
                     try:
-                        if i == 0 and batch_cnt <= 3:
+                        if i == 0 and batch_cnt <= 3010 and batch_cnt >= 3000:
                             loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
                             fetched_timeline = timeline.Timeline(run_metadata.step_stats)
                             chrome_trace = fetched_timeline.generate_chrome_trace_format()
@@ -178,7 +178,6 @@ class Word2vecModelPipeline(object):
                                 f.close()
                         else:
                             loss, _ = sess.run([self.loss, self.optimizer])
-                            break
                         batch_cnt += 1
                         total_loss += loss
                         if batch_cnt % lsize == 0:
