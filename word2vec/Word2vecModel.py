@@ -8,6 +8,7 @@ import os
 import logging
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.client import timeline
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(
@@ -161,11 +162,20 @@ class Word2vecModelPipeline(object):
             sess.run(tf.global_variables_initializer())
             total_loss = 0.0
             batch_cnt = 0
+            options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
             for i in range(epoch):
                 sess.run(self.batches_iterator.initializer)
                 while True:
                     try:
-                        loss, _ = sess.run([self.loss, self.optimizer])
+                        if batch_cnt == 1:
+                            loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
+                            fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+                            chrome_trace = fetched_timeline.generate_chrome_trace_format()
+                            with open("./timeline_01.json", "w") as f:
+                                f.write(chrome_trace)
+                        else:
+                            loss, _ = sess.run([self.loss, self.optimizer])
                         batch_cnt += 1
                         total_loss += loss
                         if batch_cnt % lsize == 0:
@@ -178,4 +188,5 @@ class Word2vecModelPipeline(object):
                         total_loss = 0.0
                         break
             embedding_matrix = sess.run(self.embed_matrix)
+            self.train_writer.add_graph(sess.graph)
         return embedding_matrix
