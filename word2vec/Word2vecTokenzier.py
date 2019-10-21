@@ -3,9 +3,10 @@
 import os
 import codecs
 import numpy as np
+import tensorflow as tf
+import threading
 from multiprocessing import Pool
 from collections import Counter
-import multiprocessing
 import logging
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(
@@ -51,12 +52,15 @@ class Word2vecTokenizer(object):
         return vocab_dict, view_seqs
 
     @staticmethod
-    def transfer(block, vocab_dict):
+    def transfer(block, vocab_dict, is_int=True):
         sequences = []
         for index, line in enumerate(block):
             items = [str(vocab_dict.get(i)) for i in line.strip().split(" ") if i in vocab_dict.keys()]
             if len(items) >= 2:
-                sequences.append(" ".join(items))
+                if(is_int):
+                    sequences.append(items)
+                else:
+                    sequences.append(" ".join(items))
             if index % 100000 == 0:
                 logging.info("transfer sequeneces:{}, in pid:{}".format(index, os.getpid()))
         return sequences
@@ -69,7 +73,7 @@ class Word2vecTokenizer(object):
         return counter
 
     @staticmethod
-    def build_vocab_threading(path, thread, min_count, with_rating=True):
+    def build_vocab_threading(path, thread, min_count, is_int, with_rating=True):
         sequences = []
         vocab_dict = dict()
         counter = Counter()
@@ -93,13 +97,106 @@ class Word2vecTokenizer(object):
         pool.join()
         pool.close()
         with Pool(thread) as pool:
-            results = [pool.apply_async(Word2vecTokenizer.transfer, (block, vocab_dict)) for block in blocks]
+            results = [pool.apply_async(Word2vecTokenizer.transfer, (block, vocab_dict, is_int)) for block in blocks]
             pool.close()
             pool.join()
         for result in results:
             sequences.extend(result.get())
         logging.info("build sequence success, sequence lenth: {}".format(len(sequences)))
         return vocab_dict, sequences
+
+    @staticmethod
+    def generate_sequence_pair(items, window_size):
+        centers_result = []
+        targets_result = []
+        for (i, center) in enumerate(items):
+            size = np.random.randint(1, window_size)
+            targets = [] + items[max(i - size, 0): i] + items[i + 1: min(i + size, len(items))]
+            for target in targets:
+                centers_result.append(np.int64(center))
+                targets_result.append(np.int64(target))
+        return (centers_result, targets_result)
+
+    @staticmethod
+    def _int64_feature(value):
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
+
+    @staticmethod
+    def serialize_pair_batches(input_words, output_words):
+        feature = {
+            'input': Word2vecTokenizer._int64_feature(input_words),
+            'output': Word2vecTokenizer._int64_feature(output_words),
+        }
+
+        example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
+        return example_proto.SerializeToString()
+
+    @staticmethod
+    def generate_block_pair(block, window_size, batch_size, store_size, tf_record_path, start, thread_size):
+        # 记录文件中存放了多少个batch
+        batch_count = 0
+        # 记录batch里面存放了多少个pair
+        pair_count = 0
+        # 记录文件名后缀
+        suffix=start
+        # 记录每个batch的输入
+        centers = np.zeros(batch_size, dtype=np.int64)
+        # 记录每个batch的输出
+        targets = np.zeros((batch_size, 1), dtype=np.int64)
+        # 文件名称
+        path = "{}_{}.tfrecord".format(tf_record_path, suffix)
+        writer = tf.python_io.TFRecordWriter(path)
+        for items in block:
+            #生成每个序列的pair
+            (center_result, target_result) = Word2vecTokenizer.generate_sequence_pair(items, window_size)
+            for (center, target) in zip(center_result, target_result):
+                if pair_count < batch_size:
+                    centers[pair_count] = center
+                    targets[pair_count] = target
+                    pair_count += 1
+                else:
+                    #写入pair
+                    serial_pair = Word2vecTokenizer.serialize_pair_batches(centers.flatten(), centers.flatten())
+                    writer.write(serial_pair)
+                    #清空pair
+                    centers = np.zeros(batch_size, dtype=np.int64)
+                    targets = np.zeros((batch_size, 1), dtype=np.int64)
+                    pair_count = 0
+                    batch_count += 1
+                    if batch_count > store_size:
+                        writer.close()
+                        suffix += thread_size
+                        path = "{}_{}.tfrecord".format(tf_record_path, suffix)
+                        writer = tf.python_io.TFRecordWriter(path)
+                        batch_count = 0
+        writer.close()
+
+
+    '''
+    用于构建TensorFlow 的TFRecord格式
+    '''
+    @staticmethod
+    def build_batches_pair_tf_record(view_seqs, window_size, thread, batch_size, store_size, store_path):
+        all_len = len(view_seqs)
+        block_len = int(all_len / thread)
+        blocks = []
+        for i in range(thread):
+            start_offset = block_len * i
+            end_offset = block_len * (i + 1)
+            if i + 1 == thread:
+                end_offset = all_len
+            blocks.append(view_seqs[start_offset:end_offset])
+        with Pool(thread) as pool:
+            [pool.apply_async(Word2vecTokenizer.generate_block_pair, \
+                                       (block,
+                                        window_size,
+                                        batch_size,
+                                        store_size,
+                                        store_path,
+                                        index,
+                                        thread)) for (index, block) in enumerate(blocks)]
+            pool.close()
+            pool.join()
 
     """
     根据window size大小和batch_size大小生成训练数据集

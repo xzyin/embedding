@@ -28,7 +28,6 @@ def parse_function(serialize_string):
     return tf.io.parse_single_example(serialize_string, feature_description)
 
 def generate_tf_record():
-    #vocab_dict, view_seqs = wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], False)
     a = np.zeros(30, dtype=np.int64).flatten()
     b = np.zeros((30, 1), dtype=np.int64).flatten()
     c = serialize_pair_batches(a,b)
