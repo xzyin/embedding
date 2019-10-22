@@ -3,15 +3,42 @@
 
 import sys
 import argparse
+from os import listdir
+import tensorflow as tf
 from os.path import abspath, dirname
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
 from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
 
-def main():
+def build_tf_record():
     vocab_dict, view_seqs =wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], True, False)
-    wt.build_batches_pair_tf_record(view_seqs, window_size=args["size"],
+    wt.build_batches_pair_tf_record(view_seqs, window_size=args["window_size"],
                                     thread=args["thread"], batch_size=args["batch_size"], store_size=args["store_size"],
-                                    store_path="C:\\Users\\xuezhengyin210834\\Desktop\\word2vec")
+                                    store_path=args["output"])
+
+def build_file_queue():
+    input_path = listdir(args["input"])
+    print(input_path)
+    data = tf.data.TFRecordDataset(input_path)
+    data_iterator = data.make_one_shot_iterator()
+    batch = data_iterator.get_next()
+    with tf.Session(config=tf.ConfigProto(
+            allow_soft_placement=True,
+            log_device_placement=True,
+            gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8))) as sess:
+        print(sess.run(batch))
+
+def read_data():
+    pass
+
+def train():
+    build_file_queue()
+
+def main():
+    method = args["method"]
+    if method == "data":
+        build_tf_record()
+    elif method == "train":
+        build_file_queue()
 
 if __name__=='__main__':
     ap = argparse.ArgumentParser(prog="Word2vec")
@@ -33,5 +60,7 @@ if __name__=='__main__':
     ap.add_argument("--thread", type=int, default=2, help="thread number of the preprocessing")
     # 多少个batch size保留
     ap.add_argument("--store_size", default=100, help="store tensorflow record path")
+    # 选择下一步需要执行的方法
+    ap.add_argument("--method", default="train", help="choose the running method")
     args = vars(ap.parse_args())
     main()
