@@ -4,7 +4,6 @@ import os
 import codecs
 import numpy as np
 import tensorflow as tf
-import threading
 from multiprocessing import Pool
 from collections import Counter
 import logging
@@ -144,7 +143,7 @@ class Word2vecTokenizer(object):
         # 记录每个batch的输出
         targets = np.zeros((batch_size, 1), dtype=np.int64)
         # 文件名称
-        path = "{}_{}.tfrecord".format(tf_record_path, suffix)
+        path = os.path.join(tf_record_path, "word2vec_{}.tfrecord".format(suffix))
         writer = tf.python_io.TFRecordWriter(path)
         for items in block:
             #生成每个序列的pair
@@ -156,7 +155,7 @@ class Word2vecTokenizer(object):
                     pair_count += 1
                 else:
                     #写入pair
-                    serial_pair = Word2vecTokenizer.serialize_pair_batches(centers.flatten(), centers.flatten())
+                    serial_pair = Word2vecTokenizer.serialize_pair_batches(centers.flatten(), targets.flatten())
                     writer.write(serial_pair)
                     #清空pair
                     centers = np.zeros(batch_size, dtype=np.int64)
@@ -166,7 +165,7 @@ class Word2vecTokenizer(object):
                     if batch_count > store_size:
                         writer.close()
                         suffix += thread_size
-                        path = "{}_{}.tfrecord".format(tf_record_path, suffix)
+                        path = os.path.join(tf_record_path, "word2vec_{}.tfrecord".format(suffix))
                         writer = tf.python_io.TFRecordWriter(path)
                         batch_count = 0
         writer.close()

@@ -193,3 +193,121 @@ class Word2vecModelPipeline(object):
             embedding_matrix = sess.run(self.embed_matrix)
             self.train_writer.add_graph(sess.graph)
         return embedding_matrix
+
+
+class Word2vecModelRecordPipeline(object):
+
+    def __init__(self, files_queue, batch_size, vocab_size, embed_size, num_sampled, learn_rate, log_dir):
+        self.files_queue = files_queue
+        self.batch_size = batch_size
+        self.vocab_size = vocab_size
+        self.embed_size = embed_size
+        self.num_sampled = num_sampled
+        self.global_step = tf.Variable(0, dtype=tf.int32, trainable=False, name="global_step")
+        self.lr = learn_rate
+        self.log_dir = log_dir
+
+    def _parse_function(self, serialize_string):
+        feature_description = {
+            'input': tf.VarLenFeature(dtype=tf.int64),
+            'output': tf.VarLenFeature(dtype=tf.int64),
+        }
+
+        features = tf.io.parse_single_example(serialized=serialize_string, features=feature_description)
+        input_sparse_tensor = features["input"]
+        output_sparse_tensor = features["output"]
+        input_dense_tensor = tf.sparse_tensor_to_dense(input_sparse_tensor)
+        output_dense_tensor = tf.sparse_tensor_to_dense(output_sparse_tensor)
+        input_tensor = tf.reshape(input_dense_tensor, shape=(self.batch_size, ))
+        output_tensor = tf.reshape(output_dense_tensor, shape=(self.batch_size, 1))
+        return (input_tensor, output_tensor)
+
+    def _create_prepare_data(self):
+        self.dataset_record = tf.data.TFRecordDataset(self.files_queue)
+        self.parse_dataset = self.dataset_record.map(self._parse_function)
+        self.dataset = self.parse_dataset.prefetch(10000)
+        self.dataset_iterator = self.dataset.make_initializable_iterator()
+        self.context, self.target = self.dataset_iterator.get_next()
+
+    def _create_embeddding(self):
+        with tf.name_scope("embed"):
+            self.embed_matrix = tf.Variable(tf.random_uniform([self.vocab_size,
+                                                              self.embed_size], -1.0, 1.0),
+                                                              name='embed_matrix')
+
+    def _create_loss(self):
+        with tf.name_scope("loss"):
+            self.embed_context = tf.nn.embedding_lookup(self.embed_matrix, self.context, name='embed')
+            self.nce_weight = tf.Variable(tf.truncated_normal([self.vocab_size, self.embed_size],
+                                                              stddev=1.0 / (self.embed_size ** 0.5)),
+                                          name='nce_weight')
+            self.nce_bias = tf.Variable(tf.zeros(self.vocab_size), name='nce_bias')
+            self.loss = tf.reduce_mean(tf.nn.nce_loss(weights=self.nce_weight,
+                                                      biases=self.nce_bias,
+                                                      labels=self.target,
+                                                      inputs=self.embed_context,
+                                                      num_sampled=self.num_sampled,
+                                                      num_classes=self.vocab_size), name='loss')
+
+    def _create_optimizer(self):
+        with tf.name_scope("optimizer"):
+            self.optimizer = tf.train.GradientDescentOptimizer(self.lr).minimize(self.loss,
+                                                                                 global_step=self.global_step)
+
+    def _create_loss_placeholder(self):
+        with tf.name_scope("average_batch_loss"):
+            self.average_batch_loss = tf.placeholder(tf.float64)
+
+    def _create_summaries(self):
+        with tf.name_scope("summaries"):
+            tf.summary.scalar("loss", self.average_batch_loss)
+            self.merge = tf.summary.merge_all()
+            self.train_writer = tf.summary.FileWriter(logdir=self.log_dir)
+
+    def build_graph(self):
+        self._create_prepare_data()
+        self._create_embeddding()
+        self._create_loss()
+        self._create_optimizer()
+        self._create_loss_placeholder()
+        self._create_summaries()
+
+    def train(self, epoch, lsize, timeline_path=None):
+        with tf.Session(config=tf.ConfigProto(
+                allow_soft_placement=True,
+                log_device_placement=True,
+                gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8))) as sess:
+            sess.run(tf.global_variables_initializer())
+            total_loss = 0.0
+            batch_cnt = 0
+            options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+            for i in range(epoch):
+                sess.run(self.dataset_iterator.initializer)
+                while True:
+                    try:
+                        if i == 0 and batch_cnt <= 3010 and batch_cnt >= 3000 and timeline is not None:
+                            loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
+                            fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+                            chrome_trace = fetched_timeline.generate_chrome_trace_format()
+                            with open(timeline_path + "_{}.json".format(batch_cnt), "w") as f:
+                                f.write(chrome_trace)
+                                f.flush()
+                                f.close()
+                        else:
+                            loss, _ = sess.run([self.loss, self.optimizer])
+                        batch_cnt += 1
+                        total_loss += loss
+                        if batch_cnt % lsize == 0:
+                            logging.info("Epoch {}, batch count:{} loss {:5.5f}".format(i, batch_cnt, loss))
+                    except tf.errors.OutOfRangeError:
+                        batch_average = total_loss / batch_cnt
+                        logging.info("Epoch {}, Average batch loss {:5.5f}".format(i, batch_average))
+                        merge = sess.run(self.merge, feed_dict={self.average_batch_loss: batch_average})
+                        self.train_writer.add_summary(merge, i)
+                        total_loss = 0.0
+                        batch_cnt = 0
+                        break
+            embedding_matrix = sess.run(self.embed_matrix)
+            self.train_writer.add_graph(sess.graph)
+        return embedding_matrix
