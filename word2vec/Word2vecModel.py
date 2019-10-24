@@ -223,9 +223,9 @@ class Word2vecModelRecordPipeline(object):
         return (input_tensor, output_tensor)
 
     def _create_prepare_data(self):
-        self.dataset_record = tf.data.TFRecordDataset(self.files_queue)
+        self.dataset_record = tf.data.TFRecordDataset(self.files_queue).prefetch(100000)
         self.parse_dataset = self.dataset_record.map(self._parse_function)
-        self.dataset = self.parse_dataset.prefetch(10000)
+        self.dataset = self.parse_dataset.prefetch(100000)
         self.dataset_iterator = self.dataset.make_initializable_iterator()
         self.context, self.target = self.dataset_iterator.get_next()
 

@@ -97,7 +97,7 @@ if __name__=='__main__':
     # 线程数
     ap.add_argument("--thread", type=int, default=1, help="thread number of the preprocessing")
     # 多少个batch size保留
-    ap.add_argument("--store_size", default=100, help="store tensorflow record path")
+    ap.add_argument("--store_size", type=int, default=100, help="store tensorflow record path")
     # 选择下一步需要执行的方法
     ap.add_argument("--method", default="train", help="choose the running method")
     # 模型的学习速率

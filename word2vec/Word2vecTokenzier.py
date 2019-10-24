@@ -4,7 +4,7 @@ import os
 import codecs
 import numpy as np
 import tensorflow as tf
-from multiprocessing import Pool
+from multiprocessing import Pool, Pipe
 from collections import Counter
 import logging
 logging.getLogger().setLevel(logging.INFO)
@@ -131,7 +131,7 @@ class Word2vecTokenizer(object):
         return example_proto.SerializeToString()
 
     @staticmethod
-    def generate_block_pair(block, window_size, batch_size, store_size, tf_record_path, start, thread_size):
+    def generate_block_pair(block, window_size, batch_size, store_size, tf_record_path, start, thread_size, child_conn):
         # 记录文件中存放了多少个batch
         batch_count = 0
         # 记录batch里面存放了多少个pair
@@ -148,26 +148,31 @@ class Word2vecTokenizer(object):
         for items in block:
             #生成每个序列的pair
             (center_result, target_result) = Word2vecTokenizer.generate_sequence_pair(items, window_size)
-            for (center, target) in zip(center_result, target_result):
-                if pair_count < batch_size:
-                    centers[pair_count] = center
-                    targets[pair_count] = target
-                    pair_count += 1
-                else:
-                    #写入pair
-                    serial_pair = Word2vecTokenizer.serialize_pair_batches(centers.flatten(), targets.flatten())
-                    writer.write(serial_pair)
-                    #清空pair
-                    centers = np.zeros(batch_size, dtype=np.int64)
-                    targets = np.zeros((batch_size, 1), dtype=np.int64)
-                    pair_count = 0
-                    batch_count += 1
-                    if batch_count > store_size:
-                        writer.close()
-                        suffix += thread_size
-                        path = os.path.join(tf_record_path, "word2vec_{}.tfrecord".format(suffix))
-                        writer = tf.python_io.TFRecordWriter(path)
-                        batch_count = 0
+            try:
+                for (center, target) in zip(center_result, target_result):
+                    if pair_count < batch_size:
+                        centers[pair_count] = center
+                        targets[pair_count] = target
+                        pair_count += 1
+                    else:
+                        #写入pair
+                        serial_pair = Word2vecTokenizer.serialize_pair_batches(centers.flatten(), targets.flatten())
+                        writer.write(serial_pair)
+                        #清空pair
+                        centers = np.zeros(batch_size, dtype=np.int64)
+                        targets = np.zeros((batch_size, 1), dtype=np.int64)
+                        pair_count = 0
+                        batch_count += 1
+                        if batch_count > store_size:
+                            writer.flush()
+                            writer.close()
+                            suffix += thread_size
+                            path = os.path.join(tf_record_path, "word2vec_{}.tfrecord".format(suffix))
+                            writer = tf.python_io.TFRecordWriter(path)
+                            batch_count = 0
+            except Exception as e:
+                child_conn.send(e)
+                child_conn.close()
         writer.close()
 
 
@@ -176,26 +181,32 @@ class Word2vecTokenizer(object):
     '''
     @staticmethod
     def build_batches_pair_tf_record(view_seqs, window_size, thread, batch_size, store_size, store_path):
-        all_len = len(view_seqs)
-        block_len = int(all_len / thread)
-        blocks = []
-        for i in range(thread):
-            start_offset = block_len * i
-            end_offset = block_len * (i + 1)
-            if i + 1 == thread:
-                end_offset = all_len
-            blocks.append(view_seqs[start_offset:end_offset])
-        with Pool(thread) as pool:
-            [pool.apply_async(Word2vecTokenizer.generate_block_pair, \
-                                       (block,
-                                        window_size,
-                                        batch_size,
-                                        store_size,
-                                        store_path,
-                                        index,
-                                        thread)) for (index, block) in enumerate(blocks)]
-            pool.close()
-            pool.join()
+        try:
+            parent_conn, child_conn = Pipe()
+            all_len = len(view_seqs)
+            block_len = int(all_len / thread)
+            blocks = []
+            for i in range(thread):
+                start_offset = block_len * i
+                end_offset = block_len * (i + 1)
+                if i + 1 == thread:
+                    end_offset = all_len
+                blocks.append(view_seqs[start_offset:end_offset])
+            with Pool(thread) as pool:
+                [pool.apply_async(Word2vecTokenizer.generate_block_pair, \
+                                           (block,
+                                            window_size,
+                                            batch_size,
+                                            store_size,
+                                            store_path,
+                                            index,
+                                            thread, child_conn)) for (index, block) in enumerate(blocks)]
+                pool.close()
+                #child_return = parent_conn.recv()
+                #print(child_return)
+                pool.join()
+        except Exception as e:
+            logging.error(e)
 
     """
     根据window size大小和batch_size大小生成训练数据集
