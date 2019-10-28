@@ -290,7 +290,8 @@ class Word2vecModelRecordPipeline(object):
                             loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
                             fetched_timeline = timeline.Timeline(run_metadata.step_stats)
                             chrome_trace = fetched_timeline.generate_chrome_trace_format()
-                            with open(os.path.join(timeline_path, "word2vec_{}.json".format(batch_cnt), "w")) as f:
+                            timeline_file_path = os.path.join(timeline_path, "word2vec_{}.json".format(batch_cnt))
+                            with open(timeline_file_path, "w") as f:
                                 f.write(chrome_trace)
                                 f.flush()
                                 f.close()
