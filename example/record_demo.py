@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from os.path import abspath, dirname
+
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
 
 def _int64_feature(value):

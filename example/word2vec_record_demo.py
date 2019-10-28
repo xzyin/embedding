@@ -4,12 +4,19 @@
 import sys
 import argparse
 import pickle
-from os import listdir, mkdir
 import tensorflow as tf
+from os import listdir, mkdir
 from os.path import abspath, dirname, join, exists
 sys.path.insert(0, abspath(dirname(dirname(__file__))))
 from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
 from word2vec.Word2vecModel import Word2vecModelRecordPipeline
+
+'''
+Check and make directory
+'''
+def cam_dir(dir_path):
+    if not exists(dir_path):
+        mkdir(dir_path)
 
 def build_tf_record():
     vocab_dict, view_seqs =wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], True, False)
@@ -59,7 +66,9 @@ def train():
                                         learn_rate=args["learn_rate"],
                                         log_dir=args["log_dir"])
     model.build_graph()
-    embeding_matrix = model.train(args["iter"], args["lsize"], args["timeline"])
+    timeline_dir = args["timeline"]
+    cam_dir(timeline_dir)
+    embeding_matrix = model.train(args["iter"], args["lsize"], timeline_dir)
     index_dict = dict(zip(vocab_dict.values(), vocab_dict.keys()))
     output = open(args["output"], "w")
     for (i, vector) in enumerate(embeding_matrix):

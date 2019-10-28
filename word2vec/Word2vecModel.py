@@ -286,11 +286,11 @@ class Word2vecModelRecordPipeline(object):
                 sess.run(self.dataset_iterator.initializer)
                 while True:
                     try:
-                        if i == 0 and batch_cnt <= 3010 and batch_cnt >= 3000 and timeline is not None:
+                        if i == 0 and batch_cnt <= 3010 and batch_cnt >= 3000 and timeline_path is not None:
                             loss, _ = sess.run([self.loss, self.optimizer], options=options, run_metadata=run_metadata)
                             fetched_timeline = timeline.Timeline(run_metadata.step_stats)
                             chrome_trace = fetched_timeline.generate_chrome_trace_format()
-                            with open(timeline_path + "_{}.json".format(batch_cnt), "w") as f:
+                            with open(os.path.join(timeline_path, "word2vec_{}.json".format(batch_cnt), "w")) as f:
                                 f.write(chrome_trace)
                                 f.flush()
                                 f.close()
