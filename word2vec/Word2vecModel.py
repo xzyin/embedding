@@ -16,6 +16,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
 class Word2vecModel(object):
 
     def __init__(self, vocab_size, embed_size, num_sampled, learn_rate, log_dir):
