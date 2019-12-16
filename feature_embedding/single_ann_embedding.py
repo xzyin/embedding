@@ -7,7 +7,6 @@ from __future__ import print_function
 
 import os
 import logging
-import numpy as np
 import tensorflow as tf
 
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
