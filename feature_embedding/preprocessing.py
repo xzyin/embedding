@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import types
 import numpy as np
 import tensorflow as tf
 import pandas as pd
@@ -10,6 +11,7 @@ from multiprocessing import Pool, Pipe
 import codecs
 import logging
 import pickle
+import argparse
 
 logging.getLogger().setLevel(logging.INFO)
 logging.basicConfig(
@@ -47,7 +49,7 @@ class FeatureEmbeddingProcessing(object):
         self._videos_feature_dict = None
         self._videos_index_dict = None
 
-    def _ByteListFeature(self, x):
+    def _BytesListFeature(self, x):
         return tf.train.Feature(bytes_list=tf.train.BytesList(value=x))
 
     def _Int64ListFeature(self, x):
@@ -58,18 +60,6 @@ class FeatureEmbeddingProcessing(object):
 
     def _FeaturesListFeature(self, x):
         return tf.train.FeatureList(feature=x)
-
-    def _serialize_pair_batches(self, category, labels, producers, expose, click):
-        feature = {
-            'v_category': self._Int64ListFeature(category),
-            'v_labels': self._FeaturesListFeature(labels),
-            'v_producers': self._Int64ListFeature(producers),
-            'v_expose': self._FloatListFeature(expose),
-            'v_click': self._FloatListFeature(click),
-        }
-
-        example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
-        return example_proto
 
     def build_batch(self):
         pass
@@ -82,12 +72,12 @@ class FeatureEmbeddingProcessing(object):
         if tc in category_dict.keys():
             feature_dict["tc"] = category_dict.get(tc)
         else:
-            feature_dict["tc"] = 1
+            feature_dict["tc"] = -1
 
         if ouid in producer_dict.keys():
             feature_dict["ouid"] = producer_dict.get(ouid)
         else:
-            feature_dict["ouid"] = 1
+            feature_dict["ouid"] = -1
 
         tag_index_list = list()
         for tag in tags:
@@ -121,7 +111,7 @@ class FeatureEmbeddingProcessing(object):
     '''
     def _build_index(self, video_feature):
         #构建三级类索引并保存
-        third_category_index = video_feature[video_feature["tc"]!="-1"]["tc"].drop_duplicates().reset_index(drop=True)
+        third_category_index = video_feature["tc"].drop_duplicates().reset_index(drop=True)
         category_index_path = os.path.join(self._home_path, "category.index")
         third_category_index.to_csv(category_index_path, sep="\t")
         index_category_dict = third_category_index.to_dict()
@@ -129,35 +119,35 @@ class FeatureEmbeddingProcessing(object):
         del third_category_index, index_category_dict
         logging.info("build third category index successful, dictionary size: {}".format(len(category_index_dict)))
 
-        category_path = self._home_path + "/category.index"
+        category_path = os.path.join(self._home_path, "category.index")
         category_write = open(category_path, "wb")
         pickle.dump(category_index_dict, category_write)
         logging.info("dump category index in file: {}".format(category_path))
 
         #构建用户索引并保存
-        index_ouid = video_feature[video_feature["ouid"]!="-1"]["ouid"].drop_duplicates().reset_index(drop=True)
+        index_ouid = video_feature["ouid"].drop_duplicates().reset_index(drop=True)
         ouid_path = os.path.join(self._home_path, "ouid.index")
         index_ouid.to_csv(ouid_path, sep='\t')
         index_ouid_dict = index_ouid.to_dict()
         ouid_index_dict = dict(zip(index_ouid_dict.values(), index_ouid_dict.keys()))
         del index_ouid, index_ouid_dict,
         logging.info("build producer index successful, dictionary size: {}".format(len(ouid_index_dict)))
-        ouid_path = self._home_path + "/ouid.index"
+        ouid_path = os.path.join(self._home_path, "ouid.index")
         ouid_write = open(ouid_path, "wb")
         pickle.dump(ouid_index_dict, ouid_write)
         logging.info("dump producer index in file:{}".format(ouid_path))
 
         #构建标签索引并保存
         video_feature_tag = video_feature.drop(["tag"], axis=1)\
-            .join(video_feature[video_feature["tag"]!="-1"]["tag"].str.split(";", expand=True).stack().reset_index(level=1, drop=True).rename("tag"))
-        tag_index = video_feature_tag[video_feature_tag["tag"]!="-1"]["tag"].drop_duplicates().reset_index(drop=True)
+            .join(video_feature["tag"].str.split(";", expand=True).stack().reset_index(level=1, drop=True).rename("tag"))
+        tag_index = video_feature_tag["tag"].drop_duplicates().reset_index(drop=True)
         tag_path = os.path.join(self._home_path, "tag.index")
         tag_index.to_csv(tag_path, sep="\t")
         index_tag_dict = tag_index.to_dict()
         tag_index_dict = dict(zip(index_tag_dict.values(), index_tag_dict.keys()))
         del video_feature_tag, tag_index, index_tag_dict
         logging.info("build tag index successful, dictionary size: {}".format(len(tag_index_dict)))
-        tag_path = self._home_path + "/tag.index"
+        tag_path = os.path.join(self._home_path, "tag.index")
         tag_write = open(tag_path, "wb")
         pickle.dump(tag_index_dict, tag_write)
         logging.info("dump tag index in file: {}".format(tag_path))
@@ -196,18 +186,6 @@ class FeatureEmbeddingProcessing(object):
                 targets_result.append(target)
 
         return (centers_result, targets_result)
-
-    def _serialize_pair_batches(self, input_context, output_words):
-        feature = {
-            "input_category":   input_context,
-            "input_label":  input_context,
-            "input_ouid":   input_context,
-            "input_expose": input_context,
-            "input_click":  input_context,
-            "output_words": output_words,
-        }
-        example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
-        return example_proto.SerializeToString()
 
     def _generate_block_pair(self, block, window_size, batch_size, store_size, tf_record_path, start, thread_size, child_conn):
         batch_count = 0
@@ -280,7 +258,7 @@ class FeatureEmbeddingProcessing(object):
         sequences = []
         for index, line in enumerate(block):
             items = [i for i in line.strip().split(" ") if i in vocab_dict.keys()]
-            if len(items) >=2:
+            if len(items) >= 2:
                 sequences.append(items)
             if index % 100000 == 0:
                 logging.info("transfer sequences: {}, in pid: {}".format(index, os.getpid()))
@@ -313,7 +291,7 @@ class FeatureEmbeddingProcessing(object):
                 counter.update(block_counter)
             for (key, value) in counter.items():
                 if value >= min_count:
-                    vocab_dict[key] = len(vocab_dict) + 1
+                    vocab_dict[key] = len(vocab_dict)
         logging.info("build vocabulary sucess, vocabulary size:{}".format(len(vocab_dict)))
         pool.join()
         pool.close()
@@ -355,20 +333,21 @@ class FeatureEmbeddingProcessing(object):
             category = feature["tc"]
             tag = feature["tag"]
             target_index = self._vocab_dict.get(target)
-
+            bytes_center = bytes(center, encoding="utf-8")
             # 每一个输入输出对应的数据结构
             # ouid: 表示作者索引
             # tc: 表示类别索引
             # tag: 表示标签索引
             # target: 表示目标结果
             feature = {
+                "center": self._BytesListFeature(x=[bytes_center]),
                 "ouid": self._Int64ListFeature(x=[ouid]),
                 "tc":   self._Int64ListFeature(x=[category]),
                 "tag":  self._Int64ListFeature(x=tag),
                 "target": self._Int64ListFeature(x=[target_index]),
             }
 
-            example_proto=tf.train.Example(features=tf.train.Features(feature=feature))
+            example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
             return example_proto.SerializeToString()
         else:
             return None
@@ -382,9 +361,10 @@ class FeatureEmbeddingProcessing(object):
     thread: 表示线程数
     child_conn: 表示子连接
     '''
-    def generate_block_pair(self, block, window_size, store_size, start, thread, child_conn):
+    def generate_block_pair(self, data_path, block, window_size, store_size, start, thread, child_conn):
         suffix = start
-        path = os.path.join(self._home_path, "word2vec_{}.tfrecord".format(suffix))
+        path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
+        logging.info("build word2vec_{}.tfrecord successful".format(suffix))
         writer = tf.python_io.TFRecordWriter(path)
         count = 0
         for items in block:
@@ -400,7 +380,7 @@ class FeatureEmbeddingProcessing(object):
                         writer.close()
                         suffix += thread
                         logging.info("build word2vec_{}.tfrecord successful".format(suffix))
-                        path = os.path.join(self._home_path, "word2vec_{}.tfrecord".format(suffix))
+                        path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
                         writer = tf.python_io.TFRecordWriter(path)
                         count = 0
 
@@ -412,6 +392,9 @@ class FeatureEmbeddingProcessing(object):
 
     def build_batches_pair_tf_record(self, view_seqs, windows_size, thread, store_size):
         #多线程生成TF Record并保存在多个文件中
+        data_path = os.path.join(self._home_path, "tf_record")
+        if os.path.exists(data_path) is False:
+            os.mkdir(data_path)
         try:
             parent_conn, child_conn = Pipe()
 
@@ -429,7 +412,8 @@ class FeatureEmbeddingProcessing(object):
             #每个线程池处理一个block
             with Pool(thread) as pool:
                 [pool.apply_async(self.generate_block_pair, \
-                                  (block,
+                                  (data_path,
+                                   block,
                                    windows_size,
                                    store_size,
                                    index,
@@ -440,21 +424,60 @@ class FeatureEmbeddingProcessing(object):
         except Exception as e:
             logging.error(e)
 
-    def generate_train_data(self):
+    def generate_train_data(self, windows_size, min_count, thread, store_size):
         self._videos_feature_dict = self.video_feature_preprocessing()
-        self._vocab_dict, self._sequences = self.user_sequence_preprocessing(2, 3)
+        self._vocab_dict, self._sequences = self.user_sequence_preprocessing(thread, min_count)
         items_path = os.path.join(self._home_path, "items.index")
         item_write = open(items_path, "wb")
         pickle.dump(self._vocab_dict, item_write)
         logging.info("dump items index in file: {}".format(items_path))
-        self.generate_block_pair(self._sequences, 4, 30000, 0, 1, None)
-        #self.build_batches_pair_tf_record(self._sequences, 4, 2, 3000)
+        self.build_batches_pair_tf_record(self._sequences, windows_size, thread, store_size)
+        # data_path = os.path.join(self._home_path, "tf_record")
+        # self.generate_block_pair(data_path, self._sequences, 5, 3000, 0, 1, None)
 
 
+def main():
+    home_path = args["home"]
+    feature_path = args["feature"]
+    view_path = args["seqs"]
+    window_size = args["window_size"]
+    min_count = args["min_count"]
+    store_size = args["store"]
+    thread_size = args["thread"]
+    video_preprocessing = FeatureEmbeddingProcessing(home_path, feature_path, view_path)
+    video_preprocessing.generate_train_data(window_size, min_count, thread_size, store_size)
 
 if __name__=="__main__":
-    home_path="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding"
-    feature_path = "C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\feature.sample"
-    view_path = "C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\seqs.sample"
-    video_preprocessing = FeatureEmbeddingProcessing(home_path, feature_path, view_path)
-    video_preprocessing.generate_train_data()
+    ap = argparse.ArgumentParser(prog="YouTube DNN Processing")
+
+    #训练目录的根路径
+    ap.add_argument("--home",
+                    type=str,
+                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding",
+                    help="home path of the YouTube DNN")
+
+    #训练特征的路径
+    ap.add_argument("--feature",
+                    type=str,
+                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\feature.sample",
+                    help="feature path of the video")
+
+    #训练观影序列的路径
+    ap.add_argument("--seqs",
+                    type=str,
+                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\seqs.sample",
+                    help="sequence path of the user action")
+
+    #训练的窗口大小
+    ap.add_argument("--window_size", type=int, default=10, help="window size of the YouTube DNN")
+
+    #
+    ap.add_argument("--min_count", type=int, default=5, help="min count of the items in action")
+
+    ap.add_argument("--store", type=int, default=300000, help="store size of the file")
+
+    ap.add_argument("--thread", type=int, default=2, help="thread size of the application")
+
+    args = vars(ap.parse_args())
+
+    main()
