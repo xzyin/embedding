@@ -91,12 +91,43 @@ class FeatureEmbeddingProcessing(object):
         x["index"] = feature_dict
         return x
 
-    def _transform_index(self, video_feature):
-        category_dict, ouid_dict, tag_dict = self._build_index(video_feature)
-        video_feature_index = video_feature.apply(self._trainsform_index_record, category_dict=category_dict,\
-                                                  producer_dict=ouid_dict, tag_dict=tag_dict, axis=1)
-        video_feature_dict = video_feature_index[["vid", "index"]].set_index("vid").to_dict()["index"]
-        return video_feature_dict
+    def _trainsform_index_record_map(self, x):
+        tc = x[1]
+        ouid = x[6]
+        tags = x[4].strip().split(";")
+        feature_dict = {}
+        if tc in self._category_dict.keys():
+            feature_dict["tc"] = self._category_dict.get(tc)
+        else:
+            feature_dict["tc"] = -1
+
+        if ouid in self._ouid_dict.keys():
+            feature_dict["ouid"] = self._ouid_dict.get(ouid)
+        else:
+            feature_dict["ouid"] = -1
+
+        tag_index_list = list()
+        for tag in tags:
+            if tag in self._tag_dict.keys():
+                index = self._tag_dict.get(tag)
+                tag_index_list.append(index)
+        if len(tag_index_list) > 0:
+            feature_dict["tag"] = tag_index_list
+        else:
+            feature_dict["tag"] = tag_index_list
+        return x[0], feature_dict
+
+    def _transform_index(self, video_feature, thread):
+        self._category_dict, self._ouid_dict, self._tag_dict = self._build_index(video_feature)
+        video_feature_index = dict()
+        length = video_feature.count()
+        with Pool(thread) as pool:
+            for cnt, (vid, feature) in enumerate(pool.imap_unordered(self._trainsform_index_record_map, video_feature.values)):
+                video_feature_index[vid] = feature
+            if cnt % 100000 == length:
+                logging.info("build video feature index: {}/{}".format(cnt, length))
+        #video_feature_dict = video_feature_index[["vid", "index"]].set_index("vid").to_dict()["index"]
+        return video_feature_index
 
 
     '''
@@ -187,43 +218,6 @@ class FeatureEmbeddingProcessing(object):
 
         return (centers_result, targets_result)
 
-    def _generate_block_pair(self, block, window_size, batch_size, store_size, tf_record_path, start, thread_size, child_conn):
-        batch_count = 0
-        pair_count = 0
-        suffix = start
-        centers = np.zeros(batch_size, dtype=np.int64)
-        targets = np.zeros((batch_size, 1), dtype=np.int64)
-        path = os.path.join(tf_record_path, "word2vec_{}.tfrecord".format(suffix))
-        writer = tf.python_io.TFRecordWriter(path)
-        for items in block:
-            (center_result, target_result) = self._generate_sequence_pair(items, window_size)
-            try:
-                for (center, target) in zip (center_result, target_result):
-                    if pair_count < batch_size:
-                        centers[pair_count] = center
-                        targets[pair_count] = target
-                        pair_count += 1
-                    else:
-                        # 写入pair
-                        serial_pair = self._serialize_pair_batches(centers.flatten(), targets.flatten())
-                        writer.write(serial_pair)
-                        # 清空pair
-                        centers = np.zeros(batch_size, dtype=np.int64)
-                        targets = np.zeros((batch_size, 1), dtype=np.int64)
-                        pair_count = 0
-                        batch_count += 1
-                        if batch_count > store_size:
-                            writer.flush()
-                            writer.close()
-                            suffix += thread_size
-                            path = os.path.join(tf_record_path, "word2vec_{}.tfrecord".format(suffix))
-                            writer = tf.python_io.TFRecordWriter(path)
-                            batch_count = 0
-            except Exception as e:
-                child_conn.send(e)
-                child_conn.close()
-            writer.close()
-
     '''
     预处理视频特征数据包括以下几个部分:
     1 读取视频特征数据
@@ -231,10 +225,10 @@ class FeatureEmbeddingProcessing(object):
     3 生成视频特征索引化后的字典
     :return 特征预处理后的字典
     '''
-    def video_feature_preprocessing(self):
+    def video_feature_preprocessing(self, thread):
         video_feature = pd.read_csv(self._feature_path, sep="\t", names=VIDEO_FEATURE_NAME, dtype=VIDEO_FEATURE_TYPE)
         #video_feature_normal = self._build_normal_score(video_feature)
-        video_feature_dict = self._transform_index(video_feature)
+        video_feature_dict = self._transform_index(video_feature, thread=thread)
         logging.info("build video feature dictionary successful:{}".format(len(video_feature_dict)))
         return video_feature_dict
 
@@ -425,7 +419,7 @@ class FeatureEmbeddingProcessing(object):
             logging.error(e)
 
     def generate_train_data(self, windows_size, min_count, thread, store_size):
-        self._videos_feature_dict = self.video_feature_preprocessing()
+        self._videos_feature_dict = self.video_feature_preprocessing(thread)
         self._vocab_dict, self._sequences = self.user_sequence_preprocessing(thread, min_count)
         items_path = os.path.join(self._home_path, "items.index")
         item_write = open(items_path, "wb")
