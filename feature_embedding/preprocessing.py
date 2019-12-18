@@ -233,8 +233,8 @@ class FeatureEmbeddingProcessing(object):
     '''
     def video_feature_preprocessing(self):
         video_feature = pd.read_csv(self._feature_path, sep="\t", names=VIDEO_FEATURE_NAME, dtype=VIDEO_FEATURE_TYPE)
-        video_feature_normal = self._build_normal_score(video_feature)
-        video_feature_dict = self._transform_index(video_feature_normal)
+        #video_feature_normal = self._build_normal_score(video_feature)
+        video_feature_dict = self._transform_index(video_feature)
         logging.info("build video feature dictionary successful:{}".format(len(video_feature_dict)))
         return video_feature_dict
 
