@@ -120,13 +120,13 @@ class FeatureEmbeddingProcessing(object):
     def _transform_index(self, video_feature, thread):
         self._category_dict, self._ouid_dict, self._tag_dict = self._build_index(video_feature)
         video_feature_index = dict()
-        length = video_feature.count()
+        length = video_feature.values.size
+
         with Pool(thread) as pool:
             for cnt, (vid, feature) in enumerate(pool.imap_unordered(self._trainsform_index_record_map, video_feature.values)):
                 video_feature_index[vid] = feature
-            if cnt % 100000 == length:
-                logging.info("build video feature index: {}/{}".format(cnt, length))
-        #video_feature_dict = video_feature_index[["vid", "index"]].set_index("vid").to_dict()["index"]
+                if cnt % 100000 == 0:
+                    logging.info("build video feature index: {}/{}".format(cnt, length))
         return video_feature_index
 
 
