@@ -91,6 +91,15 @@ class FeatureEmbeddingProcessing(object):
         x["index"] = feature_dict
         return x
 
+    def _transform_index_record_block(self, values):
+        feature_dict = dict()
+        for i, x in enumerate(values):
+            vid, feature = self._trainsform_index_record_map(x)
+            feature_dict[vid] = feature
+            if i % 10000 == 0:
+                logging.info("build video feature index:{}, pid:{}".format(i, os.getpid()))
+        return feature_dict
+
     def _trainsform_index_record_map(self, x):
         tc = x[1]
         ouid = x[6]
@@ -120,13 +129,19 @@ class FeatureEmbeddingProcessing(object):
     def _transform_index(self, video_feature, thread):
         self._category_dict, self._ouid_dict, self._tag_dict = self._build_index(video_feature)
         video_feature_index = dict()
-        length = video_feature.values.size
-
+        features = video_feature.values
+        length = len(features.tolist())
+        block_len = int(length / thread)
+        blocks = []
+        for i in range(thread):
+            start_offset = block_len * i
+            end_offset = block_len * (i + 1)
+            if i + 1 == thread:
+                end_offset = length
+            blocks.append(features[start_offset:end_offset])
         with Pool(thread) as pool:
-            for cnt, (vid, feature) in enumerate(pool.imap_unordered(self._trainsform_index_record_map, video_feature.values)):
-                video_feature_index[vid] = feature
-                if cnt % 100000 == 0:
-                    logging.info("build video feature index: {}/{}".format(cnt, length))
+            for cnt, feature in enumerate(pool.imap_unordered(self._transform_index_record_block, blocks)):
+                video_feature_index.update(feature)
         return video_feature_index
 
 
