@@ -450,7 +450,7 @@ if __name__=="__main__":
     ap.add_argument("--checkpoint", type=int, default=5, help="check out point during train")
 
     # 单轮迭代batch的打印
-    ap.add_argument(" ", type=int, default=300, help="log batch count")
+    ap.add_argument("--log_size", type=int, default=300, help="log batch count")
 
     # 表示预测或者训练
     ap.add_argument("--method", type=str, default="train", help="train or predict")
