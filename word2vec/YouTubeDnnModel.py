@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import numpy as np
 import logging
 import pickle
 import argparse
@@ -178,16 +177,18 @@ class YouTubeDnnModel(object):
 
     def _create_loss(self):
         with tf.name_scope("dnn_process"):
-            with tf.device("/cpu:0"):
-                self._sample_softmax_biases = tf.get_variable('soft_biases', initializer=tf.zeros([self._items_size]), trainable=False)
-                self._loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self._items_matrix,
-                                                                       biases=self._sample_softmax_biases,
-                                                                       labels=self._dense_target,
-                                                                       inputs=self._user_vector,
-                                                                       num_sampled=20,
-                                                                       num_true=1,
-                                                                       num_classes=self._items_size,
-                                                                       partition_strategy="mod"))
+            self._sample_softmax_biases = tf.get_variable('soft_biases',
+                                                          initializer=tf.zeros([self._items_size]),
+                                                          trainable=False)
+
+            self._loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self._items_matrix,
+                                                                   biases=self._sample_softmax_biases,
+                                                                   labels=self._dense_target,
+                                                                   inputs=self._user_vector,
+                                                                   num_sampled=20,
+                                                                   num_true=1,
+                                                                   num_classes=self._items_size,
+                                                                   partition_strategy="mod"))
     def _create_optimizer(self):
         with tf.name_scope("optimizer"):
             self._optimizer = tf.train.GradientDescentOptimizer(self._lr).minimize(self._loss, global_step=self.global_step)
@@ -375,7 +376,9 @@ def predict():
 
     log_size = args["log_size"]
     # 表示训练数据的路径
-    data_path = os.path.join(home_path, "tf_record")
+    data_path = os.path.join(home_path, "predict_tf_record")
+    output_path = os.path.join(home_path, "predict.sim")
+    output_write = open(output_path, "w")
     pathes = build_file_queue(data_path)
     category_dict, ouid_dict, tag_dict, items_dict = load_dict(home_path)
     model = YouTubeDnnModel(home_path, pathes,
@@ -404,9 +407,9 @@ def predict():
     while True:
         try:
             centers, top_idxs = sess.run([model._center, model._top_idxs])
-            for center,value in zip(centers.values,top_idxs):
+            for center, value in zip(centers.values,top_idxs):
                 center_str = str(center, encoding="utf-8")
-                print(str(center_str) + "\t" + ",".join([index_items[i] for i in value]))
+                output_write.write(str(center_str) + "\t" + ",".join([index_items[i] for i in value]) + "\n")
         except tf.errors.OutOfRangeError:
             logging.info("predict finished")
             break
@@ -453,7 +456,7 @@ if __name__=="__main__":
     ap.add_argument("--log_size", type=int, default=300, help="log batch count")
 
     # 表示预测或者训练
-    ap.add_argument("--method", type=str, default="train", help="train or predict")
+    ap.add_argument("--method", type=str, default="predict", help="train or predict")
 
     args = vars(ap.parse_args())
     main()

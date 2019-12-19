@@ -95,12 +95,14 @@ class FeatureEmbeddingProcessing(object):
         feature_dict = dict()
         for i, x in enumerate(values):
             vid, feature = self._trainsform_index_record_map(x)
-            feature_dict[vid] = feature
+            if vid is not None:
+                feature_dict[vid] = feature
             if i % 10000 == 0:
                 logging.info("build video feature index:{}, pid:{}".format(i, os.getpid()))
         return feature_dict
 
     def _trainsform_index_record_map(self, x):
+        is_add = True
         tc = x[1]
         ouid = x[6]
         tags = x[4].strip().split(";")
@@ -109,11 +111,13 @@ class FeatureEmbeddingProcessing(object):
             feature_dict["tc"] = self._category_dict.get(tc)
         else:
             feature_dict["tc"] = -1
+            is_add = False
 
         if ouid in self._ouid_dict.keys():
             feature_dict["ouid"] = self._ouid_dict.get(ouid)
         else:
             feature_dict["ouid"] = -1
+            is_add = False
 
         tag_index_list = list()
         for tag in tags:
@@ -124,10 +128,27 @@ class FeatureEmbeddingProcessing(object):
             feature_dict["tag"] = tag_index_list
         else:
             feature_dict["tag"] = tag_index_list
-        return x[0], feature_dict
+        if is_add:
+            return x[0], feature_dict
+        else:
+            return None, None
 
-    def _transform_index(self, video_feature, thread):
-        self._category_dict, self._ouid_dict, self._tag_dict = self._build_index(video_feature)
+    def _transform_index(self, video_feature, thread, train=True):
+        if train:
+            self._category_dict, self._ouid_dict, self._tag_dict = self._build_index(video_feature)
+        else:
+            category_dict_path = os.path.join(self._home_path, "category.index")
+            category_read = open(category_dict_path, "rb")
+            self._category_dict = pickle.load(category_read)
+
+            ouid_dict_path = os.path.join(self._home_path, "ouid.index")
+            ouid_read = open(ouid_dict_path, "rb")
+            self._ouid_dict = pickle.load(ouid_read)
+
+            tag_dict_path = os.path.join(self._home_path, "tag.index")
+            tag_read = open(tag_dict_path, "rb")
+            self._tag_dict = pickle.load(tag_read)
+
         video_feature_index = dict()
         features = video_feature.values
         length = len(features.tolist())
@@ -240,12 +261,13 @@ class FeatureEmbeddingProcessing(object):
     3 生成视频特征索引化后的字典
     :return 特征预处理后的字典
     '''
-    def video_feature_preprocessing(self, thread):
+    def video_feature_preprocessing(self, thread, is_train=True):
         video_feature = pd.read_csv(self._feature_path, sep="\t", names=VIDEO_FEATURE_NAME, dtype=VIDEO_FEATURE_TYPE)
         #video_feature_normal = self._build_normal_score(video_feature)
-        video_feature_dict = self._transform_index(video_feature, thread=thread)
+        video_feature_dict = self._transform_index(video_feature, thread=thread, train=is_train)
         logging.info("build video feature dictionary successful:{}".format(len(video_feature_dict)))
         return video_feature_dict
+
 
     '''
     统计每一个block的词汇个数
@@ -336,12 +358,16 @@ class FeatureEmbeddingProcessing(object):
     target: 表示中心词
     '''
     def _serial_pair(self, center, target):
-        if center in self._videos_feature_dict.keys() and target in self._vocab_dict.keys():
+        if center in self._videos_feature_dict.keys() \
+                and target in self._vocab_dict.keys():
             feature = self._videos_feature_dict[center]
             ouid = feature["ouid"]
             category = feature["tc"]
             tag = feature["tag"]
-            target_index = self._vocab_dict.get(target)
+            if target is not None:
+                target_index = self._vocab_dict.get(target)
+            else:
+                target_index = 0
             bytes_center = bytes(center, encoding="utf-8")
             # 每一个输入输出对应的数据结构
             # ouid: 表示作者索引
@@ -360,6 +386,27 @@ class FeatureEmbeddingProcessing(object):
             return example_proto.SerializeToString()
         else:
             return None
+
+    def _serial_pair_predict(self, center, feature):
+        ouid = feature["ouid"]
+        category = feature["tc"]
+        tag = feature["tag"]
+        bytes_center = bytes(center, encoding="utf-8")
+        # 每一个输入输出对应的数据结构
+        # ouid: 表示作者索引
+        # tc: 表示类别索引
+        # tag: 表示标签索引
+        # target: 表示目标结果
+        feature = {
+            "center": self._BytesListFeature(x=[bytes_center]),
+            "ouid": self._Int64ListFeature(x=[ouid]),
+            "tc":   self._Int64ListFeature(x=[category]),
+            "tag":  self._Int64ListFeature(x=tag),
+            "target": self._Int64ListFeature(x=[0]),
+        }
+
+        example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
+        return example_proto.SerializeToString()
 
     '''
     对每一个block块建立有效的网络输入输出
@@ -392,6 +439,33 @@ class FeatureEmbeddingProcessing(object):
                         path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
                         writer = tf.python_io.TFRecordWriter(path)
                         count = 0
+
+            except Exception as e:
+                child_conn.send(e)
+                child_conn.close(e)
+        writer.close()
+
+
+    def generate_predict_block(self, data_path, block, store_size, start, thread, child_conn):
+        suffix = start
+        path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
+        logging.info("build word2vec_{}.tfrecord successful".format(suffix))
+        writer = tf.python_io.TFRecordWriter(path)
+        count = 0
+        for item, item_feature in zip(block.keys(), block.values()):
+            try:
+                example = self._serial_pair_predict(item, item_feature)
+                if example is not None:
+                    writer.write(example)
+                    count += 0
+                if count > store_size:
+                    writer.flush()
+                    writer.close()
+                    suffix += thread
+                    logging.info("build word2vec_{}.tfrecord successful".format(suffix))
+                    path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
+                    writer = tf.python_io.TFRecordWriter(path)
+                    count = 0
 
             except Exception as e:
                 child_conn.send(e)
@@ -445,7 +519,7 @@ class FeatureEmbeddingProcessing(object):
         # self.generate_block_pair(data_path, self._sequences, 5, 3000, 0, 1, None)
 
 
-def main():
+def train():
     home_path = args["home"]
     feature_path = args["feature"]
     view_path = args["seqs"]
@@ -455,6 +529,28 @@ def main():
     thread_size = args["thread"]
     video_preprocessing = FeatureEmbeddingProcessing(home_path, feature_path, view_path)
     video_preprocessing.generate_train_data(window_size, min_count, thread_size, store_size)
+
+def predict():
+    home_path = args["home"]
+    feature_path = args["feature"]
+    thread_size = args["thread"]
+    store_size = args["store"]
+    video_preprocessing = FeatureEmbeddingProcessing(home_path, feature_path, None)
+    video_feature = video_preprocessing.video_feature_preprocessing(thread_size, False)
+    path = os.path.join(home_path, "predict_tf_record")
+    if os.path.exists(path) is False:
+        os.mkdir(path)
+    video_preprocessing.generate_predict_block(path, video_feature, store_size, 0, 1, None)
+
+
+def main():
+    method = args["method"]
+
+    if method == "train":
+        train()
+    if method == "predict":
+        predict()
+
 
 if __name__=="__main__":
     ap = argparse.ArgumentParser(prog="YouTube DNN Processing")
@@ -480,12 +576,13 @@ if __name__=="__main__":
     #训练的窗口大小
     ap.add_argument("--window_size", type=int, default=10, help="window size of the YouTube DNN")
 
-    #
     ap.add_argument("--min_count", type=int, default=5, help="min count of the items in action")
 
     ap.add_argument("--store", type=int, default=300000, help="store size of the file")
 
     ap.add_argument("--thread", type=int, default=2, help="thread size of the application")
+
+    ap.add_argument("--method", type=str, default="predict", help="build prepare process data")
 
     args = vars(ap.parse_args())
 
