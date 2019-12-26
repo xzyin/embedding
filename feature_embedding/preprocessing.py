@@ -262,6 +262,14 @@ class FeatureEmbeddingProcessing(object):
     :return 特征预处理后的字典
     '''
     def video_feature_preprocessing(self, thread, is_train=True):
+        input_file = open(self._feature_path, "r")
+        output_file = open(self._feature_path + ".tmp", "w")
+        line = input_file.readline()
+        while line:
+            vid_site = line.split("\t")
+            if vid_site in self._vocab_dict.keys():
+                output_file.write(line)
+            line = input_file.readline()
         video_feature = pd.read_csv(self._feature_path, sep="\t", names=VIDEO_FEATURE_NAME, dtype=VIDEO_FEATURE_TYPE)
         #video_feature_normal = self._build_normal_score(video_feature)
         video_feature_dict = self._transform_index(video_feature, thread=thread, train=is_train)
@@ -688,8 +696,8 @@ class FeatureEmbeddingProcessing(object):
         # self.generate_block_pair(data_path, self._sequences, 5, 3000, 0, 1, None)
 
     def generate_train_date_with_negatvie_sample(self, windows_size, min_count, thread, store_size):
-        self._videos_feature_dict = self.video_feature_preprocessing(thread)
         self._vocab_dict, self._sequences = self.user_sequence_preprocesing_with_expose(thread, min_count)
+        self._videos_feature_dict = self.video_feature_preprocessing(thread)
         items_path = os.path.join(self._home_path, "items.index")
         item_write = open(items_path, "wb")
         pickle.dump(self._vocab_dict, item_write)
