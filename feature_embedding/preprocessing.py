@@ -266,7 +266,7 @@ class FeatureEmbeddingProcessing(object):
         output_file = open(self._feature_path + ".tmp", "w")
         line = input_file.readline()
         while line:
-            vid_site = line.split("\t")
+            vid_site = line.split("\t")[0]
             if vid_site in self._vocab_dict.keys():
                 output_file.write(line)
             line = input_file.readline()
