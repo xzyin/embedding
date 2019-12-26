@@ -86,7 +86,8 @@ class YouTubeDnnModel(object):
             "ouid": tf.VarLenFeature(dtype=tf.int64),
             "tc": tf.VarLenFeature(dtype=tf.int64),
             "tag": tf.VarLenFeature(dtype=tf.int64),
-            "target": tf.VarLenFeature(dtype=tf.int64)
+            "target": tf.VarLenFeature(dtype=tf.int64),
+            "sample": tf.VarLenFeature(dtype=tf.int64)
         }
         features = tf.io.parse_single_example(serialized=serialize_string, features=feature_description)
 
@@ -95,7 +96,8 @@ class YouTubeDnnModel(object):
         tc = features["tc"]
         tag = features["tag"]
         target = features["target"]
-        return (center, ouid, tc, tag, target)
+        sample = features["sample"]
+        return (center, ouid, tc, tag, target, sample)
 
     '''
     预加载文件中的数据
@@ -105,8 +107,9 @@ class YouTubeDnnModel(object):
             self.dataset_record = tf.data.TFRecordDataset(self._file_queue).prefetch(self._prefetch_size)
             self.parse_dataset = self.dataset_record.map(self._parse_function).batch(self._batch_size)
             self.data_iterator = self.parse_dataset.make_initializable_iterator()
-            self._center, self._ouid, self._tc, self._tag, self._target = self.data_iterator.get_next()
+            self._center, self._ouid, self._tc, self._tag, self._target, self._sample = self.data_iterator.get_next()
             self._dense_target = tf.sparse_tensor_to_dense(self._target)
+            self._dense_sample = tf.sparse_tensor_to_dense(self._sample)
 
     '''
     创建embedding向量矩阵    
@@ -128,6 +131,8 @@ class YouTubeDnnModel(object):
             self._categorys_matrix = tf.Variable(tf.random_uniform([self._category_size,
                                                                    self._category_embed_size], -1.0, 1.0),
                                                 name="category_matrix")
+
+            self._logits_bais = tf.get_variable("logits_bais", [self._items_size], initializer=tf.constant_initializer(0.0))
 
     '''
     构建多层的dnn模型
@@ -168,6 +173,7 @@ class YouTubeDnnModel(object):
             # 全连接层3
             self._user_vector = tf.layers.dense(layers2_dropout, self._items_embed_size, activation=tf.nn.relu, name="layer3")
 
+
     def _top_k(self):
         with tf.name_scope("top_k"):
             normal_user_vector = tf.nn.l2_normalize(self._user_vector, dim=1)
@@ -176,7 +182,7 @@ class YouTubeDnnModel(object):
             self._top_values, self._top_idxs = tf.nn.top_k(dist, k=100)
 
     def _create_loss(self):
-        with tf.name_scope("dnn_process"):
+        with tf.name_scope("loss"):
             self._sample_softmax_biases = tf.get_variable('soft_biases',
                                                           initializer=tf.zeros([self._items_size]),
                                                           trainable=False)
@@ -189,9 +195,25 @@ class YouTubeDnnModel(object):
                                                                    num_true=1,
                                                                    num_classes=self._items_size,
                                                                    partition_strategy="mod"))
+
+    def _create_sample_loss(self):
+        with tf.name_scope("sample_loss"):
+            self._sample_items = tf.nn.embedding_lookup(self._items_matrix, self._dense_sample)
+            self._sample_bais = tf.nn.embedding_lookup(self._logits_bais, self._dense_sample)
+            #self._user = tf.transpose(tf.expand_dims(self._user_vector, 1), perm=[2, 0, 1])
+            self._distance_bais = tf.squeeze(tf.matmul(tf.transpose(tf.expand_dims(self._user_vector, 1), perm=[0, 1, 2]),
+                                   tf.transpose(self._sample_items, perm=[0, 2, 1]), name="distance"), axis=1) + self._sample_bais
+
+            self._softmax_dist = tf.nn.softmax_cross_entropy_with_logits(labels=self._dense_target, logits=self._distance_bais)
+            self._sample_loss = tf.reduce_mean(self._softmax_dist)
+
+
+
+
+
     def _create_optimizer(self):
         with tf.name_scope("optimizer"):
-            self._optimizer = tf.train.GradientDescentOptimizer(self._lr).minimize(self._loss, global_step=self.global_step)
+            self._optimizer = tf.train.GradientDescentOptimizer(self._lr).minimize(self._sample_loss, global_step=self.global_step)
 
     def build_graph(self):
         self._create_prepare_data()
@@ -199,6 +221,7 @@ class YouTubeDnnModel(object):
         self._create_input_context()
         self._create_dnn_process()
         self._create_loss()
+        self._create_sample_loss()
         self._top_k()
         self._create_optimizer()
 
@@ -216,7 +239,7 @@ class YouTubeDnnModel(object):
             while True:
                 try:
                     batch_cnt += 1
-                    loss, _ = self._sess.run([self._loss, self._optimizer])
+                    loss, _ = self._sess.run([self._sample_loss, self._optimizer])
                     if batch_cnt % self._log_size == 0:
                         logging.info("batch count: {}, loss :{}".format(batch_cnt, loss))
                     total_loss += loss
@@ -396,7 +419,7 @@ def predict():
     sess = tf.Session(config=tf.ConfigProto(
         allow_soft_placement=True,
         log_device_placement=True,
-        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.8)))
+        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.1)))
 
     ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(os.path.join(home_path, "model"), "check_point/checkpoint")))
     if ckpt and ckpt.model_checkpoint_path:
@@ -432,13 +455,13 @@ if __name__=="__main__":
                     help="home path of the YouTube DNN")
 
     # 训练迭代的轮数
-    ap.add_argument("--epoch", type=int, default=2, help="epoch of the YouTube DNN")
+    ap.add_argument("--epoch", type=int, default=10, help="epoch of the YouTube DNN")
 
     # 学习率
     ap.add_argument("--lr", type=float, default=1.0, help="learn rate of the YouTube DNN Model")
 
     # embedding 维度的大小
-    ap.add_argument("--embed_size", type=int, default=300, help="embed size of the feature")
+    ap.add_argument("--embed_size", type=int, default=128, help="embed size of the feature")
 
     # dropout概率
     ap.add_argument("--dropout", type=float, default=0.1, help="dropout of the YouTube DNN Model")
@@ -456,7 +479,7 @@ if __name__=="__main__":
     ap.add_argument("--log_size", type=int, default=300, help="log batch count")
 
     # 表示预测或者训练
-    ap.add_argument("--method", type=str, default="predict", help="train or predict")
+    ap.add_argument("--method", type=str, default="train", help="train or predict")
 
     args = vars(ap.parse_args())
     main()

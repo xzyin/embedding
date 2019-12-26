@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-import types
+import random
 import numpy as np
 import tensorflow as tf
 import pandas as pd
@@ -279,6 +279,15 @@ class FeatureEmbeddingProcessing(object):
             counter.update(line.strip().split(" "))
         return counter
 
+    def _block_vocab_counter_expose(self, block):
+        counter = Counter()
+        for line in block:
+            res = line.strip().split("\t")
+            if len(res) == 2:
+                counter.update(res[0].split(" "))
+                counter.update(res[1].split(" "))
+        return counter
+
     '''
     过滤每一个block不在字典内的item
     block: 每一个需要处理的items序列集合
@@ -291,6 +300,17 @@ class FeatureEmbeddingProcessing(object):
             items = [i for i in line.strip().split(" ") if i in vocab_dict.keys()]
             if len(items) >= 2:
                 sequences.append(items)
+            if index % 100000 == 0:
+                logging.info("transfer sequences: {}, in pid: {}".format(index, os.getpid()))
+        return sequences
+
+    def _transfer_expose(self, block, vocab_dict):
+        sequences = []
+        for index, line in enumerate(block):
+            click_items = [i for i in line.strip().split("\t")[0].split(" ") if i in vocab_dict.keys()]
+            expose_items = [vocab_dict[i] for i in line.strip().split("\t")[1].split(" ") if i in vocab_dict.keys()]
+            if len(click_items) >= 2:
+                sequences.append((click_items, expose_items))
             if index % 100000 == 0:
                 logging.info("transfer sequences: {}, in pid: {}".format(index, os.getpid()))
         return sequences
@@ -334,6 +354,39 @@ class FeatureEmbeddingProcessing(object):
         for result in results:
             sequences.extend(result.get())
         return vocab_dict, sequences
+
+    def user_sequence_preprocesing_with_expose(self, thread, min_count):
+        sequences = []
+        vocab_dict = dict()
+        counter = Counter()
+        lines = codecs.open(self._view_path, 'r', 'utf-8').readlines()
+        all_len = len(lines)
+        block_len = int(all_len / thread)
+        blocks = []
+        for i in range(thread):
+            start_offset = block_len * i
+            end_offset = block_len * (i + 1)
+            if i + 1 == thread:
+                end_offset = all_len
+            blocks.append(lines[start_offset:end_offset])
+        with Pool(thread) as pool:
+            for block_counter in pool.imap_unordered(self._block_vocab_counter_expose, blocks):
+                counter.update(block_counter)
+            for (key, value) in counter.items():
+                if value >= min_count:
+                    vocab_dict[key] = len(vocab_dict)
+        logging.info("build vocabulary sucess, vocabulary size:{}".format(len(vocab_dict)))
+        pool.join()
+        pool.close()
+        with Pool(thread) as pool:
+            results = [pool.apply_async(self._transfer_expose, (block, vocab_dict)) for block in blocks]
+            pool.close()
+            pool.join()
+
+        for result in results:
+            sequences.extend(result.get())
+        return vocab_dict, sequences
+
 
     '''
     对一个序列中的items按照window size的大小组成pair对
@@ -387,6 +440,59 @@ class FeatureEmbeddingProcessing(object):
         else:
             return None
 
+    def _serial_pair_expose(self, center, target, exposes):
+        if center in self._videos_feature_dict.keys() \
+                and target in self._vocab_dict.keys():
+            feature = self._videos_feature_dict[center]
+            ouid = feature["ouid"]
+            category = feature["tc"]
+            tag = feature["tag"]
+            if target is not None:
+                target_index = self._vocab_dict.get(target)
+            else:
+                target_index = 0
+
+            bytes_center = bytes(center, encoding="utf-8")
+            # 每一个输入输出对应的数据结构
+            # ouid: 表示作者索引
+            # tc: 表示类别索引
+            # tag: 表示标签索引
+            # target: 表示目标结果
+
+            expose_index_set = set()
+            for expose in exposes:
+                if len(expose_index_set) >= 31:
+                    break
+                expose_index_set.add(expose)
+
+            while len(expose_index_set) < 31:
+                sample = random.randint(0, len(self._vocab_dict)-1)
+                expose_index_set.add(sample)
+
+
+            target_list = []
+            for i in range(0, len(expose_index_set)):
+                target_list.append(0)
+            target_list.append(1)
+
+            expose_index_list = [expose for expose in expose_index_set]
+            expose_index_list.append(target_index)
+
+
+            feature = {
+                "center": self._BytesListFeature(x=[bytes_center]),
+                "ouid": self._Int64ListFeature(x=[ouid]),
+                "tc": self._Int64ListFeature(x=[category]),
+                "tag": self._Int64ListFeature(x=tag),
+                "target": self._Int64ListFeature(x=target_list),
+                "sample": self._Int64ListFeature(x=expose_index_list)
+            }
+
+            example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
+            return example_proto.SerializeToString()
+        else:
+            return None
+
     def _serial_pair_predict(self, center, feature):
         ouid = feature["ouid"]
         category = feature["tc"]
@@ -428,6 +534,35 @@ class FeatureEmbeddingProcessing(object):
                 (center_result, target_result) = self._generate_sequence_pair(items, window_size)
                 for (center, target) in zip(center_result, target_result):
                     example = self._serial_pair(center, target)
+                    if example is not None:
+                        writer.write(example)
+                        count += 0
+                    if count > store_size:
+                        writer.flush()
+                        writer.close()
+                        suffix += thread
+                        logging.info("build word2vec_{}.tfrecord successful".format(suffix))
+                        path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
+                        writer = tf.python_io.TFRecordWriter(path)
+                        count = 0
+
+            except Exception as e:
+                child_conn.send(e)
+                child_conn.close(e)
+        writer.close()
+
+
+    def generate_block_pair_expose(self, data_path, block, window_size, store_size, start, thread, child_conn):
+        suffix = start
+        path = os.path.join(data_path, "word2vec_{}.tfrecord".format(suffix))
+        logging.info("build word2vec_{}.tfrecord successful".format(suffix))
+        writer = tf.python_io.TFRecordWriter(path)
+        count = 0
+        for items, exposes in block:
+            try:
+                (center_result, target_result) = self._generate_sequence_pair(items, window_size)
+                for (center, target) in zip(center_result, target_result):
+                    example = self._serial_pair_expose(center, target, exposes)
                     if example is not None:
                         writer.write(example)
                         count += 0
@@ -507,6 +642,40 @@ class FeatureEmbeddingProcessing(object):
         except Exception as e:
             logging.error(e)
 
+    def build_batches_pair_tf_record_expose(self, view_seqs, windows_size, thread, store_size):
+        #多线程生成TF Record并保存在多个文件中
+        data_path = os.path.join(self._home_path, "tf_record")
+        if os.path.exists(data_path) is False:
+            os.mkdir(data_path)
+        try:
+            parent_conn, child_conn = Pipe()
+
+            #划分成thread大小的block数目
+            all_len = len(view_seqs)
+            block_len = int(all_len / thread)
+            blocks = []
+            for i in range(thread):
+                start_offset = block_len * i
+                end_offset = block_len * (i + 1)
+                if i + 1 == thread:
+                    end_offset = all_len
+                blocks.append(view_seqs[start_offset:end_offset])
+
+            #每个线程池处理一个block
+            with Pool(thread) as pool:
+                [pool.apply_async(self.generate_block_pair_expose, \
+                                  (data_path,
+                                   block,
+                                   windows_size,
+                                   store_size,
+                                   index,
+                                   thread,
+                                   child_conn)) for (index, block) in enumerate(blocks)]
+                pool.close()
+                pool.join()
+        except Exception as e:
+            logging.error(e)
+
     def generate_train_data(self, windows_size, min_count, thread, store_size):
         self._videos_feature_dict = self.video_feature_preprocessing(thread)
         self._vocab_dict, self._sequences = self.user_sequence_preprocessing(thread, min_count)
@@ -518,6 +687,16 @@ class FeatureEmbeddingProcessing(object):
         # data_path = os.path.join(self._home_path, "tf_record")
         # self.generate_block_pair(data_path, self._sequences, 5, 3000, 0, 1, None)
 
+    def generate_train_date_with_negatvie_sample(self, windows_size, min_count, thread, store_size):
+        self._videos_feature_dict = self.video_feature_preprocessing(thread)
+        self._vocab_dict, self._sequences = self.user_sequence_preprocesing_with_expose(thread, min_count)
+        items_path = os.path.join(self._home_path, "items.index")
+        item_write = open(items_path, "wb")
+        pickle.dump(self._vocab_dict, item_write)
+        logging.info("dump items index in file: {}".format(items_path))
+        self.build_batches_pair_tf_record_expose(self._sequences, windows_size, thread, store_size)
+        # data_path = os.path.join(self._home_path, "tf_record")
+        # self.generate_block_pair_expose(data_path, self._sequences, 5, store_size, 0, 1, None)
 
 def train():
     home_path = args["home"]
@@ -542,6 +721,17 @@ def predict():
         os.mkdir(path)
     video_preprocessing.generate_predict_block(path, video_feature, store_size, 0, 1, None)
 
+def train_expose():
+    home_path = args["home"]
+    feature_path = args["feature"]
+    view_path = args["seqs"]
+    window_size = args["window_size"]
+    min_count = args["min_count"]
+    store_size = args["store"]
+    thread_size = args["thread"]
+    video_preprocessing = FeatureEmbeddingProcessing(home_path, feature_path, view_path)
+    video_preprocessing.generate_train_date_with_negatvie_sample(window_size, min_count, thread_size, store_size)
+
 
 def main():
     method = args["method"]
@@ -551,6 +741,8 @@ def main():
     if method == "predict":
         predict()
 
+    if method == "train_expose":
+        train_expose()
 
 if __name__=="__main__":
     ap = argparse.ArgumentParser(prog="YouTube DNN Processing")
@@ -564,13 +756,13 @@ if __name__=="__main__":
     #训练特征的路径
     ap.add_argument("--feature",
                     type=str,
-                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\feature.sample",
+                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\f.sample",
                     help="feature path of the video")
 
     #训练观影序列的路径
     ap.add_argument("--seqs",
                     type=str,
-                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\seqs.sample",
+                    default="C:\\Users\\xuezhengyin210834\\Desktop\\feature_embedding\\v.sample",
                     help="sequence path of the user action")
 
     #训练的窗口大小
@@ -580,9 +772,9 @@ if __name__=="__main__":
 
     ap.add_argument("--store", type=int, default=300000, help="store size of the file")
 
-    ap.add_argument("--thread", type=int, default=2, help="thread size of the application")
+    ap.add_argument("--thread", type=int, default=3, help="thread size of the application")
 
-    ap.add_argument("--method", type=str, default="predict", help="build prepare process data")
+    ap.add_argument("--method", type=str, default="train_expose", help="build prepare process data")
 
     args = vars(ap.parse_args())
 
