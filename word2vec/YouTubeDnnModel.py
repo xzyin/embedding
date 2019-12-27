@@ -479,7 +479,7 @@ if __name__=="__main__":
     ap.add_argument("--log_size", type=int, default=300, help="log batch count")
 
     # 表示预测或者训练
-    ap.add_argument("--method", type=str, default="train", help="train or predict")
+    ap.add_argument("--method", type=str, default="predict", help="train or predict")
 
     args = vars(ap.parse_args())
     main()

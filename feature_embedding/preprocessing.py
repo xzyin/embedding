@@ -262,14 +262,6 @@ class FeatureEmbeddingProcessing(object):
     :return 特征预处理后的字典
     '''
     def video_feature_preprocessing(self, thread, is_train=True):
-        input_file = open(self._feature_path, "r")
-        output_file = open(self._feature_path + ".tmp", "w")
-        line = input_file.readline()
-        while line:
-            vid_site = line.split("\t")[0]
-            if vid_site in self._vocab_dict.keys():
-                output_file.write(line)
-            line = input_file.readline()
         video_feature = pd.read_csv(self._feature_path, sep="\t", names=VIDEO_FEATURE_NAME, dtype=VIDEO_FEATURE_TYPE)
         #video_feature_normal = self._build_normal_score(video_feature)
         video_feature_dict = self._transform_index(video_feature, thread=thread, train=is_train)
