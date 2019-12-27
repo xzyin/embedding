@@ -600,7 +600,7 @@ class FeatureEmbeddingProcessing(object):
                 example = self._serial_pair_predict(item, item_feature)
                 if example is not None:
                     writer.write(example)
-                    count += 0
+                    count += 1
                 if count > store_size:
                     writer.flush()
                     writer.close()
