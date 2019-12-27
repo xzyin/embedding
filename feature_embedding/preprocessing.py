@@ -544,7 +544,7 @@ class FeatureEmbeddingProcessing(object):
                     example = self._serial_pair(center, target)
                     if example is not None:
                         writer.write(example)
-                        count += 0
+                        count += 1
                     if count > store_size:
                         writer.flush()
                         writer.close()
@@ -573,7 +573,7 @@ class FeatureEmbeddingProcessing(object):
                     example = self._serial_pair_expose(center, target, exposes)
                     if example is not None:
                         writer.write(example)
-                        count += 0
+                        count += 1
                     if count > store_size:
                         writer.flush()
                         writer.close()
@@ -584,6 +584,7 @@ class FeatureEmbeddingProcessing(object):
                         count = 0
 
             except Exception as e:
+                writer.close()
                 child_conn.send(e)
                 child_conn.close(e)
         writer.close()
