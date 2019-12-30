@@ -176,9 +176,7 @@ class YouTubeDnnModel(object):
 
     def _top_k(self):
         with tf.name_scope("top_k"):
-            normal_user_vector = tf.nn.l2_normalize(self._user_vector, dim=1)
-            items_normal_matrix = tf.nn.l2_normalize(self._items_matrix, dim=1)
-            dist = tf.matmul(normal_user_vector, items_normal_matrix, transpose_b=True, name="l2_distance")
+            dist = tf.matmul(self._user_vector, self._items_matrix, transpose_b=True, name="l2_distance") + self._logits_bais
             self._top_values, self._top_idxs = tf.nn.top_k(dist, k=100)
 
     def _create_loss(self):
@@ -437,12 +435,73 @@ def predict():
             logging.info("predict finished")
             break
 
+def predict_vector():
+    # 表示embedding的大小
+    embed_size = args["embed_size"]
+    # 表示学习率
+    learn_rate = args["lr"]
+    # 表示dropout的概率
+    dropout = args["dropout"]
+    # 表示迭代的轮数
+    epoch = args["epoch"]
+    # 表示训练的根路径
+    home_path = args["home"]
+    # batch_size
+    batch_size = args["batch_size"]
+
+    # prefectch size
+    prefectch_size = args["prefetch_size"]
+
+    check_point = args["checkpoint"]
+
+    log_size = args["log_size"]
+    # 表示训练数据的路径
+    data_path = os.path.join(home_path, "predict_tf_record")
+    output_path = os.path.join(home_path, "predict.vec")
+    output_write = open(output_path, "w")
+    pathes = build_file_queue(data_path)
+    category_dict, ouid_dict, tag_dict, items_dict = load_dict(home_path)
+    model = YouTubeDnnModel(home_path, pathes,
+                            batch_size, prefectch_size,
+                            check_point, log_size,
+                            len(items_dict), embed_size,
+                            len(tag_dict), embed_size,
+                            len(ouid_dict), embed_size,
+                            len(category_dict), embed_size,
+                            None,
+                            learn_rate,
+                            dropout)
+    model.build_graph()
+    saver = tf.train.Saver()
+    sess = tf.Session(config=tf.ConfigProto(
+        allow_soft_placement=True,
+        log_device_placement=True,
+        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.1)))
+
+    ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(os.path.join(home_path, "model"), "check_point/checkpoint")))
+    if ckpt and ckpt.model_checkpoint_path:
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    logging.info("tf model init successfully")
+    index_items = dict(zip(items_dict.values(), items_dict.keys()))
+    sess.run(model.data_iterator.initializer)
+    while True:
+        try:
+            centers, vectors = sess.run([model._center, model._context])
+            for center, value in zip(centers.values, vectors):
+                print(str(center, "utf-8") + " " + " ".join([str(i) for i in list(value)]))
+                #print(value)
+                #center_str = str(center, encoding="utf-8")
+                #output_write.write(str(center_str) + "\t" + ",".join([index_items[i] for i in value]) + "\n")
+        except tf.errors.OutOfRangeError:
+            logging.info("predict finished")
+            break
+
 def main():
     medthod = args["method"]
     if medthod == "train":
         train()
     else:
-        predict()
+        predict_vector()
 
 
 if __name__=="__main__":
