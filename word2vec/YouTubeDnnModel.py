@@ -482,16 +482,13 @@ def predict_vector():
     if ckpt and ckpt.model_checkpoint_path:
         saver.restore(sess, ckpt.model_checkpoint_path)
     logging.info("tf model init successfully")
-    index_items = dict(zip(items_dict.values(), items_dict.keys()))
+    #index_items = dict(zip(items_dict.values(), items_dict.keys()))
     sess.run(model.data_iterator.initializer)
     while True:
         try:
             centers, vectors = sess.run([model._center, model._context])
             for center, value in zip(centers.values, vectors):
-                print(str(center, "utf-8") + " " + " ".join([str(i) for i in list(value)]))
-                #print(value)
-                #center_str = str(center, encoding="utf-8")
-                #output_write.write(str(center_str) + "\t" + ",".join([index_items[i] for i in value]) + "\n")
+                output_write.write(str(center, "utf-8") + " " + " ".join([str(i) for i in list(value)]) + "\n")
         except tf.errors.OutOfRangeError:
             logging.info("predict finished")
             break
