@@ -17,6 +17,7 @@ import tensorflow as tf
 
 word2vec = tf.load_op_library(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'word2vec_ops.so'))
 
+
 flags = tf.app.flags
 flags.DEFINE_string("save_path", None, "Directory to write the model.")
 flags.DEFINE_string(
