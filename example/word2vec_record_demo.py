@@ -1,25 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from os import listdir, mkdir
+from os.path import abspath, dirname, join, exists
 import sys
 import argparse
 import pickle
 import tensorflow as tf
-from os import listdir, mkdir
-from os.path import abspath, dirname, join, exists
-sys.path.insert(0, abspath(dirname(dirname(__file__))))
-from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
 from word2vec.Word2vecModel import Word2vecModelRecordPipeline
+from word2vec.Word2vecTokenzier import Word2vecTokenizer as wt
+sys.path.insert(0, abspath(dirname(dirname(__file__))))
 
-'''
-Check and make directory
-'''
+
 def cam_dir(dir_path):
     if not exists(dir_path):
         mkdir(dir_path)
 
 def build_tf_record():
-    vocab_dict, view_seqs =wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], True, False)
+    vocab_dict, view_seqs = wt.build_vocab_threading(args["input"], args["thread"], args["min_count"], True, False)
     output_dir = args["output"]
     output_dir_record = join(output_dir, "tf_record")
     if not exists(output_dir_record):
@@ -27,7 +25,7 @@ def build_tf_record():
     wt.build_batches_pair_tf_record(view_seqs, window_size=args["window_size"],
                                     thread=args["thread"], batch_size=args["batch_size"], store_size=args["store_size"],
                                     store_path=output_dir_record)
-    dict_file = open(join(args["output"], "vocab_dict"),"wb")
+    dict_file = open(join(args["output"], "vocab_dict"), "wb")
     pickle.dump(vocab_dict, dict_file)
     dict_file.close()
 
@@ -85,7 +83,7 @@ def main():
     elif method == "train":
         train()
 
-if __name__=='__main__':
+if __name__ == '__main__':
     ap = argparse.ArgumentParser(prog="Word2vec")
     # 输入数据
     ap.add_argument("--input", help="input path of the word sequences ")
