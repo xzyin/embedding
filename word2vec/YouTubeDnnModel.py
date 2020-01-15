@@ -109,6 +109,7 @@ class YouTubeDnnModel(object):
             self.data_iterator = self.parse_dataset.make_initializable_iterator()
             self._center, self._ouid, self._tc, self._tag, self._target, self._sample = self.data_iterator.get_next()
             self._dense_target = tf.sparse_tensor_to_dense(self._target)
+
             self._dense_sample = tf.sparse_tensor_to_dense(self._sample)
 
     '''
