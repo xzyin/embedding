@@ -20,7 +20,6 @@ logging.basicConfig(
 过滤后得到所有的词汇序列
 """
 class Word2vecTokenizer(object):
-
     @staticmethod
     def build_vocab(path, min_count, with_rating=False):
         counter = Counter()
